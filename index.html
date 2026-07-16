@@ -84,6 +84,23 @@
     max-width: 320px;
     text-align: center;
   }
+  #cap-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    max-width: 320px;
+    justify-content: center;
+  }
+  #cap-row label { font-size: 13px; color: var(--muted); }
+  #cap-select {
+    background: var(--card);
+    border: 1px solid #2a3040;
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-size: 15px;
+    color: var(--text);
+  }
   #room-info {
     display: none;
     flex-direction: column;
@@ -104,16 +121,15 @@
   #main.active { display: flex; }
 
   #call-area {
-    display: flex;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
     gap: 6px;
     padding: 6px;
     background: #000;
   }
   .cam-wrap {
     position: relative;
-    flex: 1;
-    aspect-ratio: 3/4;
-    max-height: 32vh;
+    aspect-ratio: 4/3;
     background: #14171d;
     border-radius: 10px;
     overflow: hidden;
@@ -193,11 +209,11 @@
     font-size: 13px;
   }
 
-  /* ---- Wide screens: movie big on the left, call on the right ---- */
-  @media (min-width: 900px) {
+  /* ---- Wide / landscape screens: movie big on the left, calls on the right ---- */
+  @media (min-width: 900px), ((orientation: landscape) and (min-width: 640px)) {
     #main.active {
       display: grid;
-      grid-template-columns: 1fr 340px;
+      grid-template-columns: 1fr minmax(220px, 30%);
       grid-template-rows: 1fr auto auto;
       gap: 0;
     }
@@ -205,12 +221,12 @@
     #movie { max-height: none; flex: 1; height: 100%; min-height: 0; object-fit: contain; }
     #call-area {
       grid-column: 2; grid-row: 1;
-      flex-direction: column;
+      grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
       background: transparent;
       padding: 10px 10px 10px 0;
       align-content: start;
+      overflow-y: auto;
     }
-    .cam-wrap { flex: none; width: 100%; aspect-ratio: 4/3; max-height: none; }
     #mic-row { grid-column: 1 / -1; grid-row: 2; }
     #controls { grid-column: 1 / -1; grid-row: 3; }
   }
@@ -254,13 +270,27 @@
 
 <!-- SETUP -->
 <div id="setup">
-  <p>Watch a movie together with a live video call. One person creates a room, the other joins with the code.</p>
+  <p>Watch a movie together with a live video call. One person creates a room, the others join with the code.</p>
+  <div id="cap-row">
+    <label for="cap-select">How many watching?</label>
+    <select id="cap-select">
+      <option value="2" selected>2</option>
+      <option value="3">3</option>
+      <option value="4">4</option>
+      <option value="5">5</option>
+      <option value="6">6</option>
+      <option value="7">7</option>
+      <option value="8">8</option>
+      <option value="9">9</option>
+      <option value="10">10</option>
+    </select>
+  </div>
   <button class="btn" id="btn-create">Create a room</button>
   <div id="room-info">
-    <div>Share this code with your partner:</div>
+    <div>Share this code with the others:</div>
     <div id="room-code"></div>
     <button class="btn secondary" id="btn-share">Share code</button>
-    <div class="hint">Waiting for them to join…</div>
+    <div class="hint" id="wait-hint">Waiting for others to join…</div>
   </div>
   <div style="color:var(--muted)">— or —</div>
   <input type="text" id="join-code" placeholder="Enter room code" autocapitalize="characters">
@@ -271,8 +301,7 @@
 <!-- MAIN -->
 <div id="main">
   <div id="call-area">
-    <div class="cam-wrap"><video id="local-cam" autoplay playsinline muted></video><span class="cam-label">You</span></div>
-    <div class="cam-wrap"><video id="remote-cam" autoplay playsinline></video><span class="cam-label">Partner</span></div>
+    <div class="cam-wrap" id="tile-local"><video id="local-cam" autoplay playsinline muted></video><span class="cam-label">You</span></div>
   </div>
 
   <div id="player-area">
@@ -285,10 +314,10 @@
     </div>
     <div id="file-row">
       <button class="btn secondary" id="btn-file"><svg class="ic" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg> Choose video file</button>
-      <button class="btn secondary" id="btn-stream" style="display:none"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49M7.76 16.24a6 6 0 0 1 0-8.49M19.07 4.93a10 10 0 0 1 0 14.14M4.93 19.07a10 10 0 0 1 0-14.14"/></svg> Stream to partner</button>
+      <button class="btn secondary" id="btn-stream" style="display:none"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49M7.76 16.24a6 6 0 0 1 0-8.49M19.07 4.93a10 10 0 0 1 0 14.14M4.93 19.07a10 10 0 0 1 0-14.14"/></svg> Stream to room</button>
       <input type="file" id="file-input" accept="video/*" hidden>
     </div>
-    <div class="hint" id="movie-hint">Choose a video file, then either <b>Stream to partner</b> (only you need the file) or have them pick the <b>same file</b> for perfect sync.</div>
+    <div class="hint" id="movie-hint">Choose a video file, then either <b>Stream to room</b> (only you need the file) or have everyone pick the <b>same file</b> for perfect sync.</div>
   </div>
 
   <div id="mic-row">
@@ -314,16 +343,22 @@
   const statusEl = $('status');
   const movie = $('movie');
 
-  let peer = null;          // PeerJS instance
-  let conn = null;          // data connection (sync messages)
-  let call = null;          // media connection (video call)
+  let peer = null;              // PeerJS instance
   let localStream = null;
   let isHost = false;
-  let suppress = false;     // ignore events we caused ourselves
-  let remoteId = null;      // partner's peer id (for extra calls)
-  let movieCall = null;     // outgoing movie-stream connection
-  let receivingStream = false; // true when partner streams their movie to us
+  let suppress = false;         // ignore playback events we caused ourselves
+  let hostId = null;            // room host's peer id (guests)
+  let capacity = 2;             // max people in the room (host setting)
+  let receivingStream = false;  // someone is streaming their movie to us
+  let streamingMovie = false;   // we are streaming our movie to the room
+  let movieStreamMs = null;     // our outgoing movie MediaStream
   let ending = false;
+  let lowData = false;
+  let audioCtx = null, movieSrcNode = null; // for iOS canvas-capture audio
+
+  // peers: id -> { conn, call (their cam), movieOut (our movie to them) }
+  const peers = new Map();
+  const P = id => { if (!peers.has(id)) peers.set(id, {}); return peers.get(id); };
 
   const rand = n => Array.from(crypto.getRandomValues(new Uint8Array(n)))
     .map(b => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[b % 32]).join('');
@@ -336,9 +371,15 @@
     t._h = setTimeout(() => t.style.display = 'none', ms);
   }
 
-  function setStatus(text, ok) {
-    statusEl.textContent = text;
-    statusEl.className = ok ? 'connected' : '';
+  function updateStatus() {
+    const n = peers.size + 1;
+    statusEl.textContent = n > 1 ? 'connected (' + n + ' watching)' : 'not connected';
+    statusEl.className = n > 1 ? 'connected' : '';
+  }
+
+  function enterMain() {
+    $('setup').style.display = 'none';
+    $('main').classList.add('active');
   }
 
   async function getCamera() {
@@ -349,7 +390,7 @@
         audio: { echoCancellation: true, noiseSuppression: true }
       });
       $('local-cam').srcObject = localStream;
-      listMics(); // labels become available after permission is granted
+      listMics();
       return localStream;
     } catch (e) {
       toast('Camera/mic permission needed: ' + e.message, 4000);
@@ -365,7 +406,15 @@
       else if (e.type === 'peer-unavailable') $('setup-msg').textContent = 'Room not found. Check the code.';
       else toast('Connection error: ' + e.type, 4000);
     });
-    p.on('disconnected', () => { if (!ending) { setStatus('reconnecting…'); p.reconnect(); } });
+    p.on('disconnected', () => { if (!ending) p.reconnect(); });
+    p.on('connection', c => {
+      if (isHost && peers.size >= capacity - 1 && !peers.has(c.peer)) {
+        c.on('open', () => { c.send({ type: 'full' }); setTimeout(() => c.close(), 400); });
+        return;
+      }
+      bindPeerConn(c);
+    });
+    p.on('call', handleIncomingCall);
     return p;
   }
 
@@ -373,16 +422,17 @@
   $('btn-create').onclick = async () => {
     await getCamera();
     isHost = true;
+    capacity = parseInt($('cap-select').value, 10) || 2;
     const code = rand(5);
     peer = newPeer('wt2-' + code);
     peer.on('open', () => {
       $('room-code').textContent = code;
       $('room-info').style.display = 'flex';
       $('btn-create').style.display = 'none';
-      setStatus('waiting for partner');
+      $('cap-row').style.display = 'none';
+      $('wait-hint').textContent = 'Waiting for others to join… (room size: ' + capacity + ')';
+      statusEl.textContent = 'waiting';
     });
-    peer.on('connection', c => { remoteId = c.peer; bindConn(c); });
-    peer.on('call', handleIncomingCall);
   };
 
   $('btn-share').onclick = () => {
@@ -398,19 +448,94 @@
     if (code.length < 4) { $('setup-msg').textContent = 'Enter the room code first.'; return; }
     await getCamera();
     isHost = false;
-    remoteId = 'wt2-' + code;
+    hostId = 'wt2-' + code;
     peer = newPeer(null);
-    peer.on('call', handleIncomingCall);
     peer.on('open', () => {
-      const c = peer.connect(remoteId, { reliable: true });
-      bindConn(c);
-      const outgoing = peer.call(remoteId, localStream);
-      call = outgoing;
-      bindCall(outgoing);
+      connectTo(hostId);
+      callPeer(hostId);
     });
   };
 
-  // ---------- INCOMING CALLS (camera call vs movie stream) ----------
+  function connectTo(id) {
+    const c = peer.connect(id, { reliable: true });
+    bindPeerConn(c);
+  }
+
+  function callPeer(id) {
+    const mc = peer.call(id, localStream);
+    P(id).call = mc;
+    mc.on('stream', s => attachCam(id, s));
+    mc.on('close', () => {});
+    setTimeout(() => applyBitrateTo(mc), 1200);
+  }
+
+  // ---------- DATA CONNECTIONS ----------
+  function bindPeerConn(c) {
+    c.on('open', () => {
+      P(c.peer).conn = c;
+      updateStatus();
+      if (isHost) {
+        enterMain();
+        // tell the newcomer who else is in the room
+        const others = [...peers.keys()].filter(id => id !== c.peer);
+        c.send({ type: 'peers', list: others });
+      }
+      // if we're currently streaming a movie, include the newcomer
+      if (streamingMovie && movieStreamMs) streamMovieTo(c.peer);
+    });
+    c.on('data', m => onMessage(m, c.peer));
+    c.on('close', () => handlePeerLeft(c.peer));
+    c.on('error', () => handlePeerLeft(c.peer));
+  }
+
+  function broadcast(msg) {
+    peers.forEach(p => { if (p.conn && p.conn.open) p.conn.send(msg); });
+  }
+
+  function handlePeerLeft(id) {
+    if (ending || !peers.has(id)) return;
+    const p = peers.get(id);
+    try { if (p.call) p.call.close(); } catch (e) {}
+    try { if (p.movieOut) p.movieOut.close(); } catch (e) {}
+    peers.delete(id);
+    removeTile(id);
+    updateStatus();
+    if (!isHost && id === hostId) {
+      toast('Host left — session ended', 3000);
+      ending = true;
+      setTimeout(() => location.reload(), 2500);
+    } else {
+      toast('Someone left the room', 2500);
+    }
+  }
+
+  // ---------- CAMERA TILES ----------
+  function attachCam(id, stream) {
+    let el = document.getElementById('cam-' + id);
+    if (!el) {
+      const wrap = document.createElement('div');
+      wrap.className = 'cam-wrap';
+      wrap.id = 'tile-' + id;
+      const v = document.createElement('video');
+      v.id = 'cam-' + id;
+      v.autoplay = true;
+      v.playsInline = true;
+      const lab = document.createElement('span');
+      lab.className = 'cam-label';
+      lab.textContent = 'Partner ' + (document.querySelectorAll('.cam-wrap').length);
+      wrap.appendChild(v); wrap.appendChild(lab);
+      $('call-area').appendChild(wrap);
+      el = v;
+    }
+    el.srcObject = stream;
+  }
+
+  function removeTile(id) {
+    const w = document.getElementById('tile-' + id);
+    if (w) w.remove();
+  }
+
+  // ---------- INCOMING CALLS (camera vs movie stream) ----------
   function handleIncomingCall(incoming) {
     if (incoming.metadata && incoming.metadata.type === 'movie') {
       incoming.answer(); // receive only
@@ -419,8 +544,8 @@
         movie.removeAttribute('src');
         movie.srcObject = s;
         $('remote-controls').style.display = 'flex';
-        $('movie-hint').innerHTML = 'Receiving partner\'s video stream — use the buttons above to control it.';
-        toast('Partner is streaming their video to you');
+        $('movie-hint').innerHTML = 'Receiving the movie stream — use the buttons above to control it.';
+        toast('Movie stream started');
         tryPlay();
       });
       incoming.on('close', () => {
@@ -430,9 +555,10 @@
         $('movie-hint').textContent = 'Stream ended.';
       });
     } else {
-      call = incoming;
+      P(incoming.peer).call = incoming;
       incoming.answer(localStream);
-      bindCall(incoming);
+      incoming.on('stream', s => attachCam(incoming.peer, s));
+      setTimeout(() => applyBitrateTo(incoming), 1200);
     }
   }
 
@@ -444,88 +570,81 @@
     });
   }
 
-  // ---------- CONNECTIONS ----------
-  function bindConn(c) {
-    conn = c;
-    c.on('open', () => {
-      setStatus('connected ✓', true);
-      $('setup').style.display = 'none';
-      $('main').classList.add('active');
-      toast('Connected! Choose a video file to start.');
-    });
-    c.on('data', onMessage);
-    c.on('close', () => {
-      if (ending) return;
-      setStatus('partner left');
-      toast('Partner disconnected — returning to start', 3000);
-      setTimeout(() => location.reload(), 2500);
-    });
-  }
-
-  function bindCall(mc) {
-    mc.on('stream', remote => {
-      $('remote-cam').srcObject = remote;
-      setTimeout(applyBitrate, 1000); // cap bandwidth once the call is up
-    });
-    mc.on('close', () => { $('remote-cam').srcObject = null; });
-  }
-
   // ---------- BANDWIDTH CONTROL ----------
-  let lowData = false;
-
-  function applyBitrate() {
-    const pc = call && call.peerConnection;
+  function applyBitrateTo(mc) {
+    const pc = mc && mc.peerConnection;
     if (!pc) return;
     pc.getSenders().forEach(sn => {
       if (!sn.track) return;
       const p = sn.getParameters();
       if (!p.encodings || !p.encodings.length) p.encodings = [{}];
       if (sn.track.kind === 'video') {
-        p.encodings[0].maxBitrate = lowData ? 80000 : 250000;      // 80 kbps vs 250 kbps
+        p.encodings[0].maxBitrate = lowData ? 80000 : 250000;
         p.encodings[0].scaleResolutionDownBy = lowData ? 2 : 1;
         p.encodings[0].maxFramerate = lowData ? 10 : 20;
       } else {
-        p.encodings[0].maxBitrate = lowData ? 16000 : 32000;       // voice: 16 vs 32 kbps
+        p.encodings[0].maxBitrate = lowData ? 16000 : 32000;
       }
       sn.setParameters(p).catch(() => {});
     });
   }
 
-  function capMovieBitrate() {
-    const pc = movieCall && movieCall.peerConnection;
-    if (!pc) return;
-    pc.getSenders().forEach(sn => {
-      if (!sn.track) return;
-      const p = sn.getParameters();
-      if (!p.encodings || !p.encodings.length) p.encodings = [{}];
-      if (sn.track.kind === 'video') {
-        p.encodings[0].maxBitrate = lowData ? 300000 : 900000; // movie: 300 kbps vs 900 kbps
-      } else {
-        p.encodings[0].maxBitrate = lowData ? 32000 : 64000;
-      }
-      sn.setParameters(p).catch(() => {});
-    });
+  function applyBitrateAll() {
+    peers.forEach(p => { if (p.call) applyBitrateTo(p.call); });
   }
 
-  function send(msg) {
-    if (conn && conn.open) conn.send(msg);
+  function capMovieBitrateAll() {
+    peers.forEach(p => {
+      const pc = p.movieOut && p.movieOut.peerConnection;
+      if (!pc) return;
+      pc.getSenders().forEach(sn => {
+        if (!sn.track) return;
+        const par = sn.getParameters();
+        if (!par.encodings || !par.encodings.length) par.encodings = [{}];
+        if (sn.track.kind === 'video') {
+          par.encodings[0].maxBitrate = lowData ? 300000 : 900000;
+        } else {
+          par.encodings[0].maxBitrate = lowData ? 32000 : 64000;
+        }
+        sn.setParameters(par).catch(() => {});
+      });
+    });
   }
 
   // ---------- SYNC LOGIC ----------
-  const DRIFT = 0.75; // seconds of drift allowed before we hard-seek
+  const DRIFT = 0.75;
 
-  function onMessage(msg) {
+  function onMessage(msg, fromId) {
     if (!msg || !msg.type) return;
 
-    if (msg.type === 'bye') {
-      ending = true;
-      toast('Partner ended the session', 3000);
-      setTimeout(() => location.reload(), 2000);
+    if (msg.type === 'full') {
+      $('setup-msg').textContent = 'Room is full.';
+      toast('Room is full', 3000);
       return;
     }
 
-    if (msg.type === 'ctrl') { // partner remote-controls OUR movie (we are the streamer)
-      if (receivingStream) return;
+    if (msg.type === 'peers') { // host told us who's here — connect to everyone
+      enterMain();
+      updateStatus();
+      (msg.list || []).forEach(id => {
+        if (!peers.has(id) || !peers.get(id).conn) { connectTo(id); callPeer(id); }
+      });
+      return;
+    }
+
+    if (msg.type === 'bye') {
+      if (fromId === hostId && !isHost) {
+        ending = true;
+        toast('Host ended the session', 3000);
+        setTimeout(() => location.reload(), 2000);
+      } else {
+        handlePeerLeft(fromId);
+      }
+      return;
+    }
+
+    if (msg.type === 'ctrl') { // someone remote-controls OUR movie (we are the streamer)
+      if (!streamingMovie) return;
       if (msg.action === 'play') tryPlay();
       else if (msg.action === 'pause') movie.pause();
       else if (msg.action === 'back') movie.currentTime = Math.max(0, movie.currentTime - 10);
@@ -533,12 +652,12 @@
       return;
     }
 
-    if (receivingStream) { // partner's stream controls itself; ignore sync
-      if (msg.type === 'file') toast('Partner picked: ' + msg.name, 3000);
+    if (receivingStream) { // the stream controls itself; ignore sync
+      if (msg.type === 'file') toast('File picked: ' + msg.name, 3000);
       return;
     }
     if (!movie.src && msg.type !== 'file') {
-      if (msg.type === 'play') toast('Partner pressed play — choose your file!', 3500);
+      if (msg.type === 'play') toast('Someone pressed play — choose your file!', 3500);
       return;
     }
     suppress = true;
@@ -563,11 +682,10 @@
         }
         break;
       case 'file':
-        $('movie-hint').innerHTML = 'Partner chose: <b>' + escapeHtml(msg.name) + '</b>. Pick the same file on your phone.';
-        toast('Partner picked: ' + msg.name, 4000);
+        $('movie-hint').innerHTML = 'Someone chose: <b>' + escapeHtml(msg.name) + '</b>. Pick the same file, or wait for them to stream it.';
+        toast('File picked: ' + msg.name, 4000);
         break;
     }
-    // release the guard shortly after, since play()/seek fire events async
     setTimeout(() => suppress = false, 250);
   }
 
@@ -575,28 +693,27 @@
     return String(s).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
   }
 
-  movie.addEventListener('play',  () => { if (!suppress && !receivingStream) send({ type: 'play',  time: movie.currentTime }); });
-  movie.addEventListener('pause', () => { if (!suppress && !receivingStream) send({ type: 'pause', time: movie.currentTime }); });
-  movie.addEventListener('seeked',() => { if (!suppress && !receivingStream) send({ type: 'seek',  time: movie.currentTime }); });
+  movie.addEventListener('play',  () => { if (!suppress && !receivingStream) broadcast({ type: 'play',  time: movie.currentTime }); });
+  movie.addEventListener('pause', () => { if (!suppress && !receivingStream) broadcast({ type: 'pause', time: movie.currentTime }); });
+  movie.addEventListener('seeked',() => { if (!suppress && !receivingStream) broadcast({ type: 'seek',  time: movie.currentTime }); });
 
-  // host sends heartbeat every 5s so drift never accumulates
   setInterval(() => {
-    if (isHost && movie.src && !receivingStream) send({ type: 'sync', time: movie.currentTime, playing: !movie.paused });
+    if (isHost && movie.src && !receivingStream) broadcast({ type: 'sync', time: movie.currentTime, playing: !movie.paused });
   }, 5000);
 
   $('btn-sync').onclick = () => {
-    if (receivingStream) { toast('Partner controls the stream'); return; }
-    if (movie.src) send(isHost
+    if (receivingStream) { toast('The streamer controls playback'); return; }
+    if (movie.src) broadcast(isHost
       ? { type: 'sync', time: movie.currentTime, playing: !movie.paused }
       : { type: 'seek', time: movie.currentTime });
     toast('Re-synced');
   };
 
-  // ---------- REMOTE CONTROLS (when partner streams to us) ----------
-  $('rc-play').onclick  = () => { send({ type: 'ctrl', action: 'play'  }); toast('Play'); };
-  $('rc-pause').onclick = () => { send({ type: 'ctrl', action: 'pause' }); toast('Pause'); };
-  $('rc-back').onclick  = () => { send({ type: 'ctrl', action: 'back'  }); toast('Back 10s'); };
-  $('rc-fwd').onclick   = () => { send({ type: 'ctrl', action: 'fwd'   }); toast('Forward 10s'); };
+  // ---------- REMOTE CONTROLS (when someone streams to us) ----------
+  $('rc-play').onclick  = () => { broadcast({ type: 'ctrl', action: 'play'  }); toast('Play'); };
+  $('rc-pause').onclick = () => { broadcast({ type: 'ctrl', action: 'pause' }); toast('Pause'); };
+  $('rc-back').onclick  = () => { broadcast({ type: 'ctrl', action: 'back'  }); toast('Back 10s'); };
+  $('rc-fwd').onclick   = () => { broadcast({ type: 'ctrl', action: 'fwd'   }); toast('Forward 10s'); };
 
   // ---------- FILE PICK ----------
   $('btn-file').onclick = () => $('file-input').click();
@@ -607,26 +724,62 @@
     movie.srcObject = null;
     $('remote-controls').style.display = 'none';
     movie.src = URL.createObjectURL(f);
-    $('movie-hint').innerHTML = 'Loaded: <b>' + escapeHtml(f.name) + '</b> — press play (or Stream if partner doesn\'t have the file).';
+    $('movie-hint').innerHTML = 'Loaded: <b>' + escapeHtml(f.name) + '</b> — press play (or Stream to room if others don\'t have the file).';
     $('btn-stream').style.display = '';
-    send({ type: 'file', name: f.name });
+    broadcast({ type: 'file', name: f.name });
   };
 
-  // ---------- STREAM MOVIE TO PARTNER ----------
+  // ---------- MOVIE CAPTURE (with iPhone/Safari fallback) ----------
+  function captureMovieStream() {
+    if (movie.captureStream) return movie.captureStream();
+    if (movie.mozCaptureStream) return movie.mozCaptureStream();
+    // Canvas fallback for iOS Safari: draw video frames to a canvas and capture that.
+    const canvas = document.createElement('canvas');
+    const w = movie.videoWidth || 640, h = movie.videoHeight || 360;
+    const scale = Math.min(1, 854 / w);
+    canvas.width = Math.round(w * scale);
+    canvas.height = Math.round(h * scale);
+    const ctx = canvas.getContext('2d');
+    const draw = () => {
+      try { ctx.drawImage(movie, 0, 0, canvas.width, canvas.height); } catch (e) {}
+      if ('requestVideoFrameCallback' in movie) movie.requestVideoFrameCallback(draw);
+      else requestAnimationFrame(draw);
+    };
+    draw();
+    const stream = canvas.captureStream(24);
+    // route the movie's audio into the stream (and still play it locally)
+    try {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      if (!movieSrcNode) {
+        movieSrcNode = audioCtx.createMediaElementSource(movie);
+        movieSrcNode.connect(audioCtx.destination); // keep local sound
+      }
+      const dest = audioCtx.createMediaStreamDestination();
+      movieSrcNode.connect(dest);
+      dest.stream.getAudioTracks().forEach(t => stream.addTrack(t));
+    } catch (e) { /* stream video without audio if WebAudio fails */ }
+    return stream;
+  }
+
+  function streamMovieTo(id) {
+    if (!movieStreamMs) return;
+    const p = P(id);
+    try { if (p.movieOut) p.movieOut.close(); } catch (e) {}
+    p.movieOut = peer.call(id, movieStreamMs, { metadata: { type: 'movie' } });
+    setTimeout(capMovieBitrateAll, 1500);
+  }
+
   $('btn-stream').onclick = () => {
     if (!movie.src) { toast('Choose a video file first'); return; }
-    const cap = movie.captureStream || movie.mozCaptureStream;
-    if (!cap) {
-      toast('Streaming not supported on this phone. Ask partner to pick the same file.', 5000);
-      return;
-    }
+    if (peers.size === 0) { toast('No one else is in the room yet'); return; }
     try {
-      if (movieCall) movieCall.close();
-      const ms = cap.call(movie);
-      movieCall = peer.call(remoteId, ms, { metadata: { type: 'movie' } });
+      movieStreamMs = captureMovieStream();
+      streamingMovie = true;
+      peers.forEach((p, id) => streamMovieTo(id));
       tryPlay();
-      toast('Streaming your video to partner', 4000);
-      setTimeout(capMovieBitrate, 1500);
+      toast('Streaming your video to the room', 4000);
+      if (peers.size > 3) toast('Streaming to many people uses a lot of data — Low data mode recommended', 5000);
     } catch (e) { toast('Could not stream: ' + e.message, 4000); }
   };
 
@@ -658,12 +811,16 @@
       });
       const newTrack = s.getAudioTracks()[0];
       const old = localStream.getAudioTracks()[0];
-      if (old) newTrack.enabled = old.enabled; // keep mute state
-      // swap the track in the live call first, then locally
-      if (call && call.peerConnection) {
-        const sender = call.peerConnection.getSenders().find(sn => sn.track && sn.track.kind === 'audio');
-        if (sender) await sender.replaceTrack(newTrack);
-      }
+      if (old) newTrack.enabled = old.enabled;
+      // swap the track in every live call
+      const swaps = [];
+      peers.forEach(p => {
+        const pc = p.call && p.call.peerConnection;
+        if (!pc) return;
+        const sender = pc.getSenders().find(sn => sn.track && sn.track.kind === 'audio');
+        if (sender) swaps.push(sender.replaceTrack(newTrack));
+      });
+      await Promise.all(swaps);
       if (old) { localStream.removeTrack(old); old.stop(); }
       localStream.addTrack(newTrack);
       toast('Mic switched');
@@ -673,7 +830,6 @@
     }
   };
 
-  // refresh the list when earphones are plugged in / removed
   if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
     navigator.mediaDevices.addEventListener('devicechange', () => { if (localStream) listMics(); });
   }
@@ -695,8 +851,8 @@
   };
   $('btn-lowdata').onclick = function () {
     lowData = !lowData;
-    applyBitrate();
-    capMovieBitrate();
+    applyBitrateAll();
+    capMovieBitrateAll();
     this.classList.toggle('off', lowData);
     $('ld-lbl').textContent = lowData ? 'Low data ON' : 'Low data';
     toast(lowData ? 'Low data mode on' : 'Normal quality');
@@ -705,18 +861,23 @@
   // ---------- END SESSION ----------
   $('btn-end').onclick = () => {
     ending = true;
-    send({ type: 'bye' });
+    broadcast({ type: 'bye' });
     setTimeout(() => {
-      try { if (movieCall) movieCall.close(); } catch (e) {}
-      try { if (call) call.close(); } catch (e) {}
-      try { if (conn) conn.close(); } catch (e) {}
+      peers.forEach(p => {
+        try { if (p.movieOut) p.movieOut.close(); } catch (e) {}
+        try { if (p.call) p.call.close(); } catch (e) {}
+        try { if (p.conn) p.conn.close(); } catch (e) {}
+      });
       try { if (peer) peer.destroy(); } catch (e) {}
       if (localStream) localStream.getTracks().forEach(t => t.stop());
       location.reload();
-    }, 300); // small delay so the 'bye' message gets delivered
+    }, 300);
   };
 
-  window.addEventListener('beforeunload', () => { if (conn) conn.close(); if (peer) peer.destroy(); });
+  window.addEventListener('beforeunload', () => {
+    peers.forEach(p => { if (p.conn) try { p.conn.close(); } catch (e) {} });
+    if (peer) try { peer.destroy(); } catch (e) {}
+  });
 })();
 </script>
 </body>
