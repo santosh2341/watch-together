@@ -146,6 +146,23 @@
     cursor: pointer;
   }
   #controls button.off { background: #b0413e; }
+  #mic-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 10px 10px;
+    background: var(--card);
+  }
+  #mic-row label { font-size: 12px; color: var(--muted); white-space: nowrap; }
+  #mic-select {
+    flex: 1;
+    background: #2a3040;
+    color: var(--text);
+    border: none;
+    border-radius: 10px;
+    padding: 10px;
+    font-size: 13px;
+  }
   #toast {
     position: fixed;
     bottom: 80px; left: 50%;
@@ -199,9 +216,15 @@
     <div class="hint" id="movie-hint">Both of you must choose the <b>same video file</b> on your own phone. Playback then stays in sync automatically.</div>
   </div>
 
+  <div id="mic-row">
+    <label for="mic-select">🎤 Mic:</label>
+    <select id="mic-select"></select>
+  </div>
+
   <div id="controls">
     <button id="btn-mic">🎤 Mic on</button>
     <button id="btn-cam">📷 Cam on</button>
+    <button id="btn-lowdata">📶 Low data</button>
     <button id="btn-sync">🔄 Re-sync</button>
   </div>
 </div>
@@ -241,10 +264,11 @@
     if (localStream) return localStream;
     try {
       localStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: { ideal: 640 } },
+        video: { facingMode: 'user', width: { ideal: 480 }, frameRate: { ideal: 20, max: 24 } },
         audio: { echoCancellation: true, noiseSuppression: true }
       });
       $('local-cam').srcObject = localStream;
+      listMics(); // labels become available after permission is granted
       return localStream;
     } catch (e) {
       toast('Camera/mic permission needed: ' + e.message, 4000);
@@ -321,8 +345,32 @@
   }
 
   function bindCall(mc) {
-    mc.on('stream', remote => { $('remote-cam').srcObject = remote; });
+    mc.on('stream', remote => {
+      $('remote-cam').srcObject = remote;
+      setTimeout(applyBitrate, 1000); // cap bandwidth once the call is up
+    });
     mc.on('close', () => { $('remote-cam').srcObject = null; });
+  }
+
+  // ---------- BANDWIDTH CONTROL ----------
+  let lowData = false;
+
+  function applyBitrate() {
+    const pc = call && call.peerConnection;
+    if (!pc) return;
+    pc.getSenders().forEach(sn => {
+      if (!sn.track) return;
+      const p = sn.getParameters();
+      if (!p.encodings || !p.encodings.length) p.encodings = [{}];
+      if (sn.track.kind === 'video') {
+        p.encodings[0].maxBitrate = lowData ? 80000 : 250000;      // 80 kbps vs 250 kbps
+        p.encodings[0].scaleResolutionDownBy = lowData ? 2 : 1;
+        p.encodings[0].maxFramerate = lowData ? 10 : 20;
+      } else {
+        p.encodings[0].maxBitrate = lowData ? 16000 : 32000;       // voice: 16 vs 32 kbps
+      }
+      sn.setParameters(p).catch(() => {});
+    });
   }
 
   function send(msg) {
@@ -375,47 +423,3 @@
   movie.addEventListener('play',  () => { if (!suppress) send({ type: 'play',  time: movie.currentTime }); });
   movie.addEventListener('pause', () => { if (!suppress) send({ type: 'pause', time: movie.currentTime }); });
   movie.addEventListener('seeked',() => { if (!suppress) send({ type: 'seek',  time: movie.currentTime }); });
-
-  // host sends heartbeat every 5s so drift never accumulates
-  setInterval(() => {
-    if (isHost && movie.src) send({ type: 'sync', time: movie.currentTime, playing: !movie.paused });
-  }, 5000);
-
-  $('btn-sync').onclick = () => {
-    if (movie.src) send(isHost
-      ? { type: 'sync', time: movie.currentTime, playing: !movie.paused }
-      : { type: 'seek', time: movie.currentTime });
-    toast('Re-synced');
-  };
-
-  // ---------- FILE PICK ----------
-  $('btn-file').onclick = () => $('file-input').click();
-  $('file-input').onchange = e => {
-    const f = e.target.files[0];
-    if (!f) return;
-    movie.src = URL.createObjectURL(f);
-    $('movie-hint').innerHTML = 'Loaded: <b>' + escapeHtml(f.name) + '</b>';
-    send({ type: 'file', name: f.name });
-  };
-
-  // ---------- MIC / CAM TOGGLES ----------
-  $('btn-mic').onclick = function () {
-    const t = localStream && localStream.getAudioTracks()[0];
-    if (!t) return;
-    t.enabled = !t.enabled;
-    this.textContent = t.enabled ? '🎤 Mic on' : '🎤 Mic off';
-    this.classList.toggle('off', !t.enabled);
-  };
-  $('btn-cam').onclick = function () {
-    const t = localStream && localStream.getVideoTracks()[0];
-    if (!t) return;
-    t.enabled = !t.enabled;
-    this.textContent = t.enabled ? '📷 Cam on' : '📷 Cam off';
-    this.classList.toggle('off', !t.enabled);
-  };
-
-  window.addEventListener('beforeunload', () => { if (conn) conn.close(); if (peer) peer.destroy(); });
-})();
-</script>
-</body>
-</html>
