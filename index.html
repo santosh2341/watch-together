@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Watch Together</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1115;
+    --card: #1a1e26;
+    --accent: #4f8cff;
+    --text: #e8eaf0;
+    --muted: #8a92a6;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+  header {
+    padding: 10px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--card);
+  }
+  header h1 { font-size: 16px; font-weight: 600; }
+  #status {
+    font-size: 12px;
+    color: var(--muted);
+  }
+  #status.connected { color: #4caf7d; }
+
+  /* ---- Setup screen ---- */
+  #setup {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    padding: 24px;
+    text-align: center;
+  }
+  #setup p { color: var(--muted); font-size: 14px; max-width: 320px; }
+  .btn {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 10px;
+    padding: 14px 22px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    width: 100%;
+    max-width: 320px;
+  }
+  .btn.secondary { background: #2a3040; }
+  input[type="text"] {
+    background: var(--card);
+    border: 1px solid #2a3040;
+    border-radius: 10px;
+    padding: 14px;
+    font-size: 16px;
+    color: var(--text);
+    width: 100%;
+    max-width: 320px;
+    text-align: center;
+  }
+  #room-info {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+  }
+  #room-code {
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: 3px;
+    background: var(--card);
+    padding: 10px 20px;
+    border-radius: 10px;
+  }
+
+  /* ---- Main screen ---- */
+  #main { display: none; flex: 1; flex-direction: column; }
+
+  #call-area {
+    display: flex;
+    gap: 6px;
+    padding: 6px;
+    background: #000;
+  }
+  .cam-wrap {
+    position: relative;
+    flex: 1;
+    aspect-ratio: 3/4;
+    max-height: 32vh;
+    background: #14171d;
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .cam-wrap video {
+    width: 100%; height: 100%;
+    object-fit: cover;
+  }
+  .cam-label {
+    position: absolute;
+    bottom: 6px; left: 8px;
+    font-size: 11px;
+    background: rgba(0,0,0,.55);
+    padding: 2px 8px;
+    border-radius: 6px;
+  }
+
+  #player-area { flex: 1; padding: 10px; display: flex; flex-direction: column; gap: 10px; }
+  #movie {
+    width: 100%;
+    background: #000;
+    border-radius: 10px;
+    max-height: 42vh;
+  }
+  .hint { font-size: 12px; color: var(--muted); text-align: center; }
+  #file-row { display: flex; gap: 8px; }
+  #file-row .btn { padding: 12px; font-size: 14px; }
+
+  #controls {
+    display: flex;
+    gap: 8px;
+    padding: 10px;
+    background: var(--card);
+  }
+  #controls button {
+    flex: 1;
+    background: #2a3040;
+    color: var(--text);
+    border: none;
+    border-radius: 10px;
+    padding: 12px 6px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  #controls button.off { background: #b0413e; }
+  #toast {
+    position: fixed;
+    bottom: 80px; left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0,0,0,.8);
+    padding: 10px 18px;
+    border-radius: 10px;
+    font-size: 13px;
+    display: none;
+    z-index: 10;
+    white-space: nowrap;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🎬 Watch Together</h1>
+  <span id="status">not connected</span>
+</header>
+
+<!-- SETUP -->
+<div id="setup">
+  <p>Watch a movie together with a live video call. One person creates a room, the other joins with the code.</p>
+  <button class="btn" id="btn-create">Create a room</button>
+  <div id="room-info">
+    <div>Share this code with your partner:</div>
+    <div id="room-code"></div>
+    <button class="btn secondary" id="btn-share">Share code</button>
+    <div class="hint">Waiting for them to join…</div>
+  </div>
+  <div style="color:var(--muted)">— or —</div>
+  <input type="text" id="join-code" placeholder="Enter room code" autocapitalize="characters">
+  <button class="btn secondary" id="btn-join">Join room</button>
+  <p id="setup-msg"></p>
+</div>
+
+<!-- MAIN -->
+<div id="main">
+  <div id="call-area">
+    <div class="cam-wrap"><video id="local-cam" autoplay playsinline muted></video><span class="cam-label">You</span></div>
+    <div class="cam-wrap"><video id="remote-cam" autoplay playsinline></video><span class="cam-label">Partner</span></div>
+  </div>
+
+  <div id="player-area">
+    <video id="movie" controls playsinline></video>
+    <div id="file-row">
+      <button class="btn secondary" id="btn-file">📁 Choose video file</button>
+      <input type="file" id="file-input" accept="video/*" hidden>
+    </div>
+    <div class="hint" id="movie-hint">Both of you must choose the <b>same video file</b> on your own phone. Playback then stays in sync automatically.</div>
+  </div>
+
+  <div id="controls">
+    <button id="btn-mic">🎤 Mic on</button>
+    <button id="btn-cam">📷 Cam on</button>
+    <button id="btn-sync">🔄 Re-sync</button>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const statusEl = $('status');
+  const movie = $('movie');
+
+  let peer = null;          // PeerJS instance
+  let conn = null;          // data connection (sync messages)
+  let call = null;          // media connection (video call)
+  let localStream = null;
+  let isHost = false;
+  let suppress = false;     // ignore events we caused ourselves
+
+  const rand = n => Array.from(crypto.getRandomValues(new Uint8Array(n)))
+    .map(b => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[b % 32]).join('');
+
+  function toast(msg, ms = 2500) {
+    const t = $('toast');
+    t.textContent = msg;
+    t.style.display = 'block';
+    clearTimeout(t._h);
+    t._h = setTimeout(() => t.style.display = 'none', ms);
+  }
+
+  function setStatus(text, ok) {
+    statusEl.textContent = text;
+    statusEl.className = ok ? 'connected' : '';
+  }
+
+  async function getCamera() {
+    if (localStream) return localStream;
+    try {
+      localStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user', width: { ideal: 640 } },
+        audio: { echoCancellation: true, noiseSuppression: true }
+      });
+      $('local-cam').srcObject = localStream;
+      return localStream;
+    } catch (e) {
+      toast('Camera/mic permission needed: ' + e.message, 4000);
+      throw e;
+    }
+  }
+
+  function newPeer(id) {
+    // Uses PeerJS's free public cloud server for signaling.
+    const p = new Peer(id, { debug: 1 });
+    p.on('error', e => {
+      if (e.type === 'unavailable-id') $('setup-msg').textContent = 'Code busy, try again.';
+      else if (e.type === 'peer-unavailable') $('setup-msg').textContent = 'Room not found. Check the code.';
+      else toast('Connection error: ' + e.type, 4000);
+    });
+    p.on('disconnected', () => { setStatus('reconnecting…'); p.reconnect(); });
+    return p;
+  }
+
+  // ---------- HOST ----------
+  $('btn-create').onclick = async () => {
+    await getCamera();
+    isHost = true;
+    const code = rand(5);
+    peer = newPeer('wt2-' + code);
+    peer.on('open', () => {
+      $('room-code').textContent = code;
+      $('room-info').style.display = 'flex';
+      $('btn-create').style.display = 'none';
+      setStatus('waiting for partner');
+    });
+    peer.on('connection', c => bindConn(c));
+    peer.on('call', incoming => {
+      call = incoming;
+      incoming.answer(localStream);
+      bindCall(incoming);
+    });
+  };
+
+  $('btn-share').onclick = () => {
+    const code = $('room-code').textContent;
+    const text = 'Join my Watch Together room! Open ' + location.href.split('#')[0] + ' and enter code: ' + code;
+    if (navigator.share) navigator.share({ text }).catch(() => {});
+    else { navigator.clipboard.writeText(text); toast('Copied to clipboard'); }
+  };
+
+  // ---------- GUEST ----------
+  $('btn-join').onclick = async () => {
+    const code = $('join-code').value.trim().toUpperCase();
+    if (code.length < 4) { $('setup-msg').textContent = 'Enter the room code first.'; return; }
+    await getCamera();
+    isHost = false;
+    peer = newPeer(null);
+    peer.on('open', () => {
+      const c = peer.connect('wt2-' + code, { reliable: true });
+      bindConn(c);
+      const outgoing = peer.call('wt2-' + code, localStream);
+      call = outgoing;
+      bindCall(outgoing);
+    });
+  };
+
+  // ---------- CONNECTIONS ----------
+  function bindConn(c) {
+    conn = c;
+    c.on('open', () => {
+      setStatus('connected ✓', true);
+      $('setup').style.display = 'none';
+      $('main').style.display = 'flex';
+      toast('Connected! Now both choose the same video file.');
+    });
+    c.on('data', onMessage);
+    c.on('close', () => { setStatus('partner left'); toast('Partner disconnected', 4000); });
+  }
+
+  function bindCall(mc) {
+    mc.on('stream', remote => { $('remote-cam').srcObject = remote; });
+    mc.on('close', () => { $('remote-cam').srcObject = null; });
+  }
+
+  function send(msg) {
+    if (conn && conn.open) conn.send(msg);
+  }
+
+  // ---------- SYNC LOGIC ----------
+  const DRIFT = 0.75; // seconds of drift allowed before we hard-seek
+
+  function onMessage(msg) {
+    if (!msg || !msg.type) return;
+    if (!movie.src && msg.type !== 'file') {
+      if (msg.type === 'play') toast('Partner pressed play — choose your file!', 3500);
+      return;
+    }
+    suppress = true;
+    switch (msg.type) {
+      case 'play':
+        if (Math.abs(movie.currentTime - msg.time) > DRIFT) movie.currentTime = msg.time;
+        movie.play().catch(() => toast('Tap ▶ once to allow playback', 3500));
+        break;
+      case 'pause':
+        movie.pause();
+        if (Math.abs(movie.currentTime - msg.time) > DRIFT) movie.currentTime = msg.time;
+        break;
+      case 'seek':
+        movie.currentTime = msg.time;
+        break;
+      case 'sync': // periodic heartbeat from host
+        if (!isHost) {
+          const target = msg.playing ? msg.time + 0.15 : msg.time;
+          if (Math.abs(movie.currentTime - target) > DRIFT) movie.currentTime = target;
+          if (msg.playing && movie.paused) movie.play().catch(() => {});
+          if (!msg.playing && !movie.paused) movie.pause();
+        }
+        break;
+      case 'file':
+        $('movie-hint').innerHTML = 'Partner chose: <b>' + escapeHtml(msg.name) + '</b>. Pick the same file on your phone.';
+        toast('Partner picked: ' + msg.name, 4000);
+        break;
+    }
+    // release the guard shortly after, since play()/seek fire events async
+    setTimeout(() => suppress = false, 250);
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+  }
+
+  movie.addEventListener('play',  () => { if (!suppress) send({ type: 'play',  time: movie.currentTime }); });
+  movie.addEventListener('pause', () => { if (!suppress) send({ type: 'pause', time: movie.currentTime }); });
+  movie.addEventListener('seeked',() => { if (!suppress) send({ type: 'seek',  time: movie.currentTime }); });
+
+  // host sends heartbeat every 5s so drift never accumulates
+  setInterval(() => {
+    if (isHost && movie.src) send({ type: 'sync', time: movie.currentTime, playing: !movie.paused });
+  }, 5000);
+
+  $('btn-sync').onclick = () => {
+    if (movie.src) send(isHost
+      ? { type: 'sync', time: movie.currentTime, playing: !movie.paused }
+      : { type: 'seek', time: movie.currentTime });
+    toast('Re-synced');
+  };
+
+  // ---------- FILE PICK ----------
+  $('btn-file').onclick = () => $('file-input').click();
+  $('file-input').onchange = e => {
+    const f = e.target.files[0];
+    if (!f) return;
+    movie.src = URL.createObjectURL(f);
+    $('movie-hint').innerHTML = 'Loaded: <b>' + escapeHtml(f.name) + '</b>';
+    send({ type: 'file', name: f.name });
+  };
+
+  // ---------- MIC / CAM TOGGLES ----------
+  $('btn-mic').onclick = function () {
+    const t = localStream && localStream.getAudioTracks()[0];
+    if (!t) return;
+    t.enabled = !t.enabled;
+    this.textContent = t.enabled ? '🎤 Mic on' : '🎤 Mic off';
+    this.classList.toggle('off', !t.enabled);
+  };
+  $('btn-cam').onclick = function () {
+    const t = localStream && localStream.getVideoTracks()[0];
+    if (!t) return;
+    t.enabled = !t.enabled;
+    this.textContent = t.enabled ? '📷 Cam on' : '📷 Cam off';
+    this.classList.toggle('off', !t.enabled);
+  };
+
+  window.addEventListener('beforeunload', () => { if (conn) conn.close(); if (peer) peer.destroy(); });
+})();
+</script>
+</body>
+</html>
