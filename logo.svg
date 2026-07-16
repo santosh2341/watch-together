@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- popcorn -->
+  <g fill="#f6eabc" stroke="#e9a11b" stroke-width="16" stroke-linejoin="round">
+    <circle cx="148" cy="162" r="54"/>
+    <circle cx="384" cy="158" r="50"/>
+    <circle cx="222" cy="112" r="62"/>
+    <circle cx="322" cy="118" r="58"/>
+    <circle cx="268" cy="164" r="62"/>
+  </g>
+  <!-- golden kernel accents -->
+  <path d="M206 182 q30 -30 62 -2" fill="none" stroke="#e9a11b" stroke-width="18" stroke-linecap="round"/>
+  <path d="M306 152 q24 -24 48 -2" fill="none" stroke="#e9a11b" stroke-width="16" stroke-linecap="round"/>
+  <!-- bucket -->
+  <path d="M94 212 L418 212 L378 460 Q375 480 354 480 L158 480 Q137 480 134 460 Z"
+        fill="#f5197a" stroke="#9a0f2f" stroke-width="22" stroke-linejoin="round"/>
+  <!-- light stripes -->
+  <path d="M152 226 L196 226 L212 466 L176 466 Z" fill="#fce9f2"/>
+  <path d="M296 226 L338 226 L330 466 L298 466 Z" fill="#fce9f2"/>
+  <!-- darker stripe shade -->
+  <path d="M338 226 L376 226 L360 466 L330 466 Z" fill="#e00f66"/>
+  <!-- play button -->
+  <path d="M226 296 L330 348 L226 400 Z" fill="#ffffff" stroke="#ffffff" stroke-width="34" stroke-linejoin="round"/>
+</svg>
