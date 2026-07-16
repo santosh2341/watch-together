@@ -89,6 +89,7 @@
 
   /* ---- Main screen ---- */
   #main { display: none; flex: 1; flex-direction: column; }
+  #main.active { display: flex; }
 
   #call-area {
     display: flex;
@@ -162,6 +163,27 @@
     border-radius: 10px;
     padding: 10px;
     font-size: 13px;
+  }
+  /* ---- Wide screens: movie big on the left, call on the right ---- */
+  @media (min-width: 900px) {
+    #main.active {
+      display: grid;
+      grid-template-columns: 1fr 340px;
+      grid-template-rows: 1fr auto auto;
+      gap: 0;
+    }
+    #player-area { grid-column: 1; grid-row: 1; min-height: 0; }
+    #movie { max-height: none; flex: 1; height: 100%; min-height: 0; object-fit: contain; }
+    #call-area {
+      grid-column: 2; grid-row: 1;
+      flex-direction: column;
+      background: transparent;
+      padding: 10px 10px 10px 0;
+      align-content: start;
+    }
+    .cam-wrap { flex: none; width: 100%; aspect-ratio: 4/3; max-height: none; }
+    #mic-row { grid-column: 1 / -1; grid-row: 2; }
+    #controls { grid-column: 1 / -1; grid-row: 3; }
   }
   #tap-play {
     display: none;
@@ -387,7 +409,7 @@
     c.on('open', () => {
       setStatus('connected ✓', true);
       $('setup').style.display = 'none';
-      $('main').style.display = 'flex';
+      $('main').classList.add('active');
       toast('Connected! Now both choose the same video file.');
     });
     c.on('data', onMessage);
