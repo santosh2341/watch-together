@@ -12,6 +12,7 @@
     --accent: #4f8cff;
     --text: #e8eaf0;
     --muted: #8a92a6;
+    --danger: #b0413e;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -22,6 +23,17 @@
     display: flex;
     flex-direction: column;
   }
+  .ic {
+    width: 15px; height: 15px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    flex: none;
+  }
+  .ic.solid { fill: currentColor; stroke: none; }
+  button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
   header {
     padding: 10px 14px;
     display: flex;
@@ -29,7 +41,7 @@
     justify-content: space-between;
     background: var(--card);
   }
-  header h1 { font-size: 16px; font-weight: 600; }
+  header h1 { font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
   #status {
     font-size: 12px;
     color: var(--muted);
@@ -130,6 +142,21 @@
   #file-row { display: flex; gap: 8px; }
   #file-row .btn { padding: 12px; font-size: 14px; }
 
+  #remote-controls {
+    display: none;
+    gap: 8px;
+    justify-content: center;
+  }
+  #remote-controls button {
+    background: #2a3040;
+    color: var(--text);
+    border: none;
+    border-radius: 10px;
+    padding: 12px 16px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+
   #controls {
     display: flex;
     gap: 8px;
@@ -146,7 +173,8 @@
     font-size: 13px;
     cursor: pointer;
   }
-  #controls button.off { background: #b0413e; }
+  #controls button.off { background: var(--danger); }
+  #controls button.danger { background: var(--danger); }
   #mic-row {
     display: flex;
     align-items: center;
@@ -154,7 +182,7 @@
     padding: 10px 10px 0;
     background: var(--card);
   }
-  #mic-row label { font-size: 12px; color: var(--muted); white-space: nowrap; }
+  #mic-row label { font-size: 12px; color: var(--muted); white-space: nowrap; display: inline-flex; align-items: center; gap: 5px; }
   #mic-select {
     flex: 1;
     background: #2a3040;
@@ -164,6 +192,7 @@
     padding: 10px;
     font-size: 13px;
   }
+
   /* ---- Wide screens: movie big on the left, call on the right ---- */
   @media (min-width: 900px) {
     #main.active {
@@ -185,6 +214,7 @@
     #mic-row { grid-column: 1 / -1; grid-row: 2; }
     #controls { grid-column: 1 / -1; grid-row: 3; }
   }
+
   #tap-play {
     display: none;
     position: fixed;
@@ -200,6 +230,7 @@
     z-index: 20;
     box-shadow: 0 4px 24px rgba(0,0,0,.6);
   }
+  #tap-play .ic { width: 20px; height: 20px; }
   #toast {
     position: fixed;
     bottom: 80px; left: 50%;
@@ -217,7 +248,7 @@
 <body>
 
 <header>
-  <h1>🎬 Watch Together</h1>
+  <h1><svg class="ic" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M7 4v16M17 4v16M2 9h5M2 15h5M17 9h5M17 15h5"/></svg> Watch Together</h1>
   <span id="status">not connected</span>
 </header>
 
@@ -246,28 +277,35 @@
 
   <div id="player-area">
     <video id="movie" controls playsinline></video>
+    <div id="remote-controls">
+      <button id="rc-back" title="Back 10 seconds"><svg class="ic solid" viewBox="0 0 24 24"><polygon points="11 19 2 12 11 5 11 19"/><polygon points="22 19 13 12 22 5 22 19"/></svg> 10s</button>
+      <button id="rc-play" title="Play"><svg class="ic solid" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg> Play</button>
+      <button id="rc-pause" title="Pause"><svg class="ic solid" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg> Pause</button>
+      <button id="rc-fwd" title="Forward 10 seconds">10s <svg class="ic solid" viewBox="0 0 24 24"><polygon points="13 19 22 12 13 5 13 19"/><polygon points="2 19 11 12 2 5 2 19"/></svg></button>
+    </div>
     <div id="file-row">
-      <button class="btn secondary" id="btn-file">📁 Choose video file</button>
-      <button class="btn secondary" id="btn-stream" style="display:none">📡 Stream to partner</button>
+      <button class="btn secondary" id="btn-file"><svg class="ic" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg> Choose video file</button>
+      <button class="btn secondary" id="btn-stream" style="display:none"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49M7.76 16.24a6 6 0 0 1 0-8.49M19.07 4.93a10 10 0 0 1 0 14.14M4.93 19.07a10 10 0 0 1 0-14.14"/></svg> Stream to partner</button>
       <input type="file" id="file-input" accept="video/*" hidden>
     </div>
     <div class="hint" id="movie-hint">Choose a video file, then either <b>Stream to partner</b> (only you need the file) or have them pick the <b>same file</b> for perfect sync.</div>
   </div>
 
   <div id="mic-row">
-    <label for="mic-select">🎤 Mic:</label>
+    <label for="mic-select"><svg class="ic" viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v1a7 7 0 0 1-14 0v-1M12 18v4"/></svg> Mic:</label>
     <select id="mic-select"></select>
   </div>
 
   <div id="controls">
-    <button id="btn-mic">🎤 Mic on</button>
-    <button id="btn-cam">📷 Cam on</button>
-    <button id="btn-lowdata">📶 Low data</button>
-    <button id="btn-sync">🔄 Re-sync</button>
+    <button id="btn-mic"><svg class="ic" viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v1a7 7 0 0 1-14 0v-1M12 18v4"/></svg> <span id="mic-lbl">Mic on</span></button>
+    <button id="btn-cam"><svg class="ic" viewBox="0 0 24 24"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg> <span id="cam-lbl">Cam on</span></button>
+    <button id="btn-lowdata"><svg class="ic" viewBox="0 0 24 24"><path d="M7 20v-4M12 20v-8M17 20V8M22 20V4M2 20h.01"/></svg> <span id="ld-lbl">Low data</span></button>
+    <button id="btn-sync"><svg class="ic" viewBox="0 0 24 24"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Re-sync</button>
+    <button id="btn-end" class="danger"><svg class="ic solid" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2"/></svg> End</button>
   </div>
 </div>
 
-<button id="tap-play">▶ Tap to play</button>
+<button id="tap-play"><svg class="ic solid" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg> Tap to play</button>
 <div id="toast"></div>
 
 <script>
@@ -285,6 +323,7 @@
   let remoteId = null;      // partner's peer id (for extra calls)
   let movieCall = null;     // outgoing movie-stream connection
   let receivingStream = false; // true when partner streams their movie to us
+  let ending = false;
 
   const rand = n => Array.from(crypto.getRandomValues(new Uint8Array(n)))
     .map(b => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[b % 32]).join('');
@@ -326,7 +365,7 @@
       else if (e.type === 'peer-unavailable') $('setup-msg').textContent = 'Room not found. Check the code.';
       else toast('Connection error: ' + e.type, 4000);
     });
-    p.on('disconnected', () => { setStatus('reconnecting…'); p.reconnect(); });
+    p.on('disconnected', () => { if (!ending) { setStatus('reconnecting…'); p.reconnect(); } });
     return p;
   }
 
@@ -379,13 +418,15 @@
         receivingStream = true;
         movie.removeAttribute('src');
         movie.srcObject = s;
-        $('movie-hint').innerHTML = '📡 Receiving partner\'s video stream — they control playback.';
+        $('remote-controls').style.display = 'flex';
+        $('movie-hint').innerHTML = 'Receiving partner\'s video stream — use the buttons above to control it.';
         toast('Partner is streaming their video to you');
         tryPlay();
       });
       incoming.on('close', () => {
         receivingStream = false;
         movie.srcObject = null;
+        $('remote-controls').style.display = 'none';
         $('movie-hint').textContent = 'Stream ended.';
       });
     } else {
@@ -398,7 +439,7 @@
   function tryPlay() {
     movie.play().catch(() => {
       const b = $('tap-play');
-      b.style.display = 'block';
+      b.style.display = 'inline-flex';
       b.onclick = () => { b.style.display = 'none'; movie.play().catch(() => {}); };
     });
   }
@@ -410,10 +451,15 @@
       setStatus('connected ✓', true);
       $('setup').style.display = 'none';
       $('main').classList.add('active');
-      toast('Connected! Now both choose the same video file.');
+      toast('Connected! Choose a video file to start.');
     });
     c.on('data', onMessage);
-    c.on('close', () => { setStatus('partner left'); toast('Partner disconnected', 4000); });
+    c.on('close', () => {
+      if (ending) return;
+      setStatus('partner left');
+      toast('Partner disconnected — returning to start', 3000);
+      setTimeout(() => location.reload(), 2500);
+    });
   }
 
   function bindCall(mc) {
@@ -445,6 +491,22 @@
     });
   }
 
+  function capMovieBitrate() {
+    const pc = movieCall && movieCall.peerConnection;
+    if (!pc) return;
+    pc.getSenders().forEach(sn => {
+      if (!sn.track) return;
+      const p = sn.getParameters();
+      if (!p.encodings || !p.encodings.length) p.encodings = [{}];
+      if (sn.track.kind === 'video') {
+        p.encodings[0].maxBitrate = lowData ? 300000 : 900000; // movie: 300 kbps vs 900 kbps
+      } else {
+        p.encodings[0].maxBitrate = lowData ? 32000 : 64000;
+      }
+      sn.setParameters(p).catch(() => {});
+    });
+  }
+
   function send(msg) {
     if (conn && conn.open) conn.send(msg);
   }
@@ -454,6 +516,23 @@
 
   function onMessage(msg) {
     if (!msg || !msg.type) return;
+
+    if (msg.type === 'bye') {
+      ending = true;
+      toast('Partner ended the session', 3000);
+      setTimeout(() => location.reload(), 2000);
+      return;
+    }
+
+    if (msg.type === 'ctrl') { // partner remote-controls OUR movie (we are the streamer)
+      if (receivingStream) return;
+      if (msg.action === 'play') tryPlay();
+      else if (msg.action === 'pause') movie.pause();
+      else if (msg.action === 'back') movie.currentTime = Math.max(0, movie.currentTime - 10);
+      else if (msg.action === 'fwd') movie.currentTime = Math.min(movie.duration || Infinity, movie.currentTime + 10);
+      return;
+    }
+
     if (receivingStream) { // partner's stream controls itself; ignore sync
       if (msg.type === 'file') toast('Partner picked: ' + msg.name, 3000);
       return;
@@ -506,11 +585,18 @@
   }, 5000);
 
   $('btn-sync').onclick = () => {
+    if (receivingStream) { toast('Partner controls the stream'); return; }
     if (movie.src) send(isHost
       ? { type: 'sync', time: movie.currentTime, playing: !movie.paused }
       : { type: 'seek', time: movie.currentTime });
     toast('Re-synced');
   };
+
+  // ---------- REMOTE CONTROLS (when partner streams to us) ----------
+  $('rc-play').onclick  = () => { send({ type: 'ctrl', action: 'play'  }); toast('Play'); };
+  $('rc-pause').onclick = () => { send({ type: 'ctrl', action: 'pause' }); toast('Pause'); };
+  $('rc-back').onclick  = () => { send({ type: 'ctrl', action: 'back'  }); toast('Back 10s'); };
+  $('rc-fwd').onclick   = () => { send({ type: 'ctrl', action: 'fwd'   }); toast('Forward 10s'); };
 
   // ---------- FILE PICK ----------
   $('btn-file').onclick = () => $('file-input').click();
@@ -519,8 +605,9 @@
     if (!f) return;
     receivingStream = false;
     movie.srcObject = null;
+    $('remote-controls').style.display = 'none';
     movie.src = URL.createObjectURL(f);
-    $('movie-hint').innerHTML = 'Loaded: <b>' + escapeHtml(f.name) + '</b> — press ▶ (or 📡 Stream if partner doesn\'t have the file).';
+    $('movie-hint').innerHTML = 'Loaded: <b>' + escapeHtml(f.name) + '</b> — press play (or Stream if partner doesn\'t have the file).';
     $('btn-stream').style.display = '';
     send({ type: 'file', name: f.name });
   };
@@ -538,26 +625,10 @@
       const ms = cap.call(movie);
       movieCall = peer.call(remoteId, ms, { metadata: { type: 'movie' } });
       tryPlay();
-      toast('📡 Streaming your video to partner', 4000);
+      toast('Streaming your video to partner', 4000);
       setTimeout(capMovieBitrate, 1500);
     } catch (e) { toast('Could not stream: ' + e.message, 4000); }
   };
-
-  function capMovieBitrate() {
-    const pc = movieCall && movieCall.peerConnection;
-    if (!pc) return;
-    pc.getSenders().forEach(sn => {
-      if (!sn.track) return;
-      const p = sn.getParameters();
-      if (!p.encodings || !p.encodings.length) p.encodings = [{}];
-      if (sn.track.kind === 'video') {
-        p.encodings[0].maxBitrate = lowData ? 300000 : 900000; // movie: 300 kbps vs 900 kbps
-      } else {
-        p.encodings[0].maxBitrate = lowData ? 32000 : 64000;
-      }
-      sn.setParameters(p).catch(() => {});
-    });
-  }
 
   // ---------- MIC SELECTION ----------
   async function listMics() {
@@ -607,29 +678,42 @@
     navigator.mediaDevices.addEventListener('devicechange', () => { if (localStream) listMics(); });
   }
 
-  // ---------- MIC / CAM TOGGLES ----------
+  // ---------- MIC / CAM / LOW DATA TOGGLES ----------
   $('btn-mic').onclick = function () {
     const t = localStream && localStream.getAudioTracks()[0];
     if (!t) return;
     t.enabled = !t.enabled;
-    this.textContent = t.enabled ? '🎤 Mic on' : '🎤 Mic off';
+    $('mic-lbl').textContent = t.enabled ? 'Mic on' : 'Mic off';
     this.classList.toggle('off', !t.enabled);
   };
   $('btn-cam').onclick = function () {
     const t = localStream && localStream.getVideoTracks()[0];
     if (!t) return;
     t.enabled = !t.enabled;
-    this.textContent = t.enabled ? '📷 Cam on' : '📷 Cam off';
+    $('cam-lbl').textContent = t.enabled ? 'Cam on' : 'Cam off';
     this.classList.toggle('off', !t.enabled);
   };
-
   $('btn-lowdata').onclick = function () {
     lowData = !lowData;
     applyBitrate();
     capMovieBitrate();
     this.classList.toggle('off', lowData);
-    this.textContent = lowData ? '📶 Low data ON' : '📶 Low data';
-    toast(lowData ? 'Low data mode: call uses ~100 kbps' : 'Normal quality');
+    $('ld-lbl').textContent = lowData ? 'Low data ON' : 'Low data';
+    toast(lowData ? 'Low data mode on' : 'Normal quality');
+  };
+
+  // ---------- END SESSION ----------
+  $('btn-end').onclick = () => {
+    ending = true;
+    send({ type: 'bye' });
+    setTimeout(() => {
+      try { if (movieCall) movieCall.close(); } catch (e) {}
+      try { if (call) call.close(); } catch (e) {}
+      try { if (conn) conn.close(); } catch (e) {}
+      try { if (peer) peer.destroy(); } catch (e) {}
+      if (localStream) localStream.getTracks().forEach(t => t.stop());
+      location.reload();
+    }, 300); // small delay so the 'bye' message gets delivered
   };
 
   window.addEventListener('beforeunload', () => { if (conn) conn.close(); if (peer) peer.destroy(); });
