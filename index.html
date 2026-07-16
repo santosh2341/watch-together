@@ -224,7 +224,7 @@
   @media (min-width: 900px), ((orientation: landscape) and (min-width: 640px)) {
     #main.active {
       display: grid;
-      grid-template-columns: 1fr minmax(220px, 30%);
+      grid-template-columns: 1fr minmax(240px, 26%);
       grid-template-rows: 1fr auto auto;
       gap: 0;
     }
@@ -232,7 +232,9 @@
     #movie { max-height: none; flex: 1; height: 100%; min-height: 0; object-fit: contain; }
     #call-area {
       grid-column: 2; grid-row: 1;
-      grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+      grid-template-columns: 1fr;   /* one wide tile per row, filling the side panel */
+      grid-auto-rows: min-content;
+      gap: 10px;
       background: transparent;
       padding: 10px 10px 10px 0;
       align-content: start;
@@ -241,6 +243,86 @@
     #mic-row { grid-column: 1 / -1; grid-row: 2; }
     #controls { grid-column: 1 / -1; grid-row: 3; }
   }
+
+  /* ---- Fullscreen view buttons (in player area) ---- */
+  #view-row {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  #view-row button {
+    background: #2a3040;
+    color: var(--text);
+    border: none;
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+
+  /* ---- Custom fullscreen stage ---- */
+  #fs-stage {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    flex-direction: column;
+    background: #000;
+  }
+  #fs-stage.active { display: flex; }
+  #fs-body {
+    flex: 1;
+    display: flex;
+    min-height: 0;
+    min-width: 0;
+  }
+  #fs-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #000;
+  }
+  #fs-main video { width: 100%; height: 100%; object-fit: contain; }
+  #fs-side {
+    width: 300px;
+    flex: none;
+    display: none;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px;
+    overflow-y: auto;
+    background: #0b0d11;
+  }
+  #fs-stage.with-partner #fs-side { display: flex; }
+  #fs-side .cam-wrap { width: 100%; }
+
+  #fs-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 18px;
+    background: rgba(10,12,16,.92);
+  }
+  #fs-controls button {
+    background: rgba(255,255,255,.12);
+    color: #fff;
+    border: none;
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-size: 14px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  #fs-controls button:hover { background: rgba(255,255,255,.22); }
+  #fs-controls .ic { width: 18px; height: 18px; }
+  #fs-seek { flex: 1; cursor: pointer; accent-color: var(--accent); }
+  #fs-time { font-size: 13px; color: var(--muted); min-width: 92px; text-align: center; font-variant-numeric: tabular-nums; }
+  #fs-exit { margin-left: auto; }
 
   #tap-play {
     display: none;
@@ -330,6 +412,10 @@
       <input type="file" id="file-input" accept="video/*" hidden>
     </div>
     <div class="hint" id="movie-hint">Choose a video file, then either <b>Stream to room</b> (only you need the file) or have everyone pick the <b>same file</b> for perfect sync.</div>
+    <div id="view-row">
+      <button id="btn-fs-movie" title="Fullscreen — movie only"><svg class="ic" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg> Full screen (movie only)</button>
+      <button id="btn-fs-partner" title="Fullscreen with video call"><svg class="ic" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3M3 16v3a2 2 0 0 0 2 2h3"/><rect x="13" y="5" width="8" height="6" rx="1"/><rect x="13" y="14" width="8" height="5" rx="1"/></svg> Full screen + partner</button>
+    </div>
   </div>
 
   <div id="mic-row">
@@ -343,6 +429,22 @@
     <button id="btn-lowdata"><svg class="ic" viewBox="0 0 24 24"><path d="M7 20v-4M12 20v-8M17 20V8M22 20V4M2 20h.01"/></svg> <span id="ld-lbl">Low data</span></button>
     <button id="btn-sync"><svg class="ic" viewBox="0 0 24 24"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Re-sync</button>
     <button id="btn-end" class="danger"><svg class="ic solid" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2"/></svg> End</button>
+  </div>
+</div>
+
+<!-- CUSTOM FULLSCREEN STAGE -->
+<div id="fs-stage">
+  <div id="fs-body">
+    <div id="fs-main"></div>
+    <div id="fs-side"></div>
+  </div>
+  <div id="fs-controls">
+    <button id="fs-back" title="Back 10 seconds"><svg class="ic solid" viewBox="0 0 24 24"><polygon points="11 19 2 12 11 5 11 19"/><polygon points="22 19 13 12 22 5 22 19"/></svg></button>
+    <button id="fs-toggle" title="Play / Pause"><svg class="ic solid" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>
+    <button id="fs-fwd" title="Forward 10 seconds"><svg class="ic solid" viewBox="0 0 24 24"><polygon points="13 19 22 12 13 5 13 19"/><polygon points="2 19 11 12 2 5 2 19"/></svg></button>
+    <input type="range" id="fs-seek" min="0" max="1000" value="0">
+    <span id="fs-time">0:00 / 0:00</span>
+    <button id="fs-exit" title="Exit fullscreen"><svg class="ic" viewBox="0 0 24 24"><path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/></svg> Exit</button>
   </div>
 </div>
 
@@ -869,6 +971,141 @@
     $('ld-lbl').textContent = lowData ? 'Low data ON' : 'Low data';
     toast(lowData ? 'Low data mode on' : 'Normal quality');
   };
+
+  // ---------- CUSTOM FULLSCREEN (movie only / movie + partner) ----------
+  const fsStage = $('fs-stage');
+  const fsMain = $('fs-main');
+  const fsSide = $('fs-side');
+  const fsToggle = $('fs-toggle');
+  const fsBack = $('fs-back');
+  const fsFwd = $('fs-fwd');
+  const fsSeek = $('fs-seek');
+  const fsTime = $('fs-time');
+
+  const PLAY_SVG  = '<svg class="ic solid" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>';
+  const PAUSE_SVG = '<svg class="ic solid" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>';
+
+  let fsActive = false;
+  let fsMode = null;                 // 'movie' | 'partner'
+  let fsStreamPlaying = true;        // intent tracker while controlling a received stream
+  const moviePH = document.createComment('movie-home');
+  const callPH  = document.createComment('call-home');
+
+  const setDisp = (el, show) => { el.style.display = show ? '' : 'none'; };
+
+  function fmtTime(s) {
+    if (!isFinite(s) || s < 0) s = 0;
+    const m = Math.floor(s / 60), sec = Math.floor(s % 60);
+    return m + ':' + String(sec).padStart(2, '0');
+  }
+
+  function updateFsToggle() {
+    const playing = receivingStream ? fsStreamPlaying : !movie.paused;
+    fsToggle.innerHTML = playing ? PAUSE_SVG : PLAY_SVG;
+  }
+
+  function updateFsSeek() {
+    if (fsMode !== 'movie' || receivingStream || !isFinite(movie.duration)) return;
+    fsSeek.value = movie.duration ? Math.round((movie.currentTime / movie.duration) * 1000) : 0;
+    fsTime.textContent = fmtTime(movie.currentTime) + ' / ' + fmtTime(movie.duration);
+  }
+
+  function reqFs(el) {
+    const fn = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen;
+    if (fn) { try { const r = fn.call(el); if (r && r.catch) r.catch(() => {}); } catch (e) {} }
+  }
+  function exitNativeFs() {
+    const fn = document.exitFullscreen || document.webkitExitFullscreen || document.msExitFullscreen;
+    if (fn) { try { fn.call(document); } catch (e) {} }
+  }
+  const fsElement = () => document.fullscreenElement || document.webkitFullscreenElement || null;
+
+  function enterFs(mode) {
+    if (fsActive) return;
+    fsMode = mode;
+    fsActive = true;
+    fsStreamPlaying = receivingStream ? !movie.paused : true;
+
+    // move the movie into the stage (it keeps playing)
+    movie.removeAttribute('controls');
+    movie.replaceWith(moviePH);
+    fsMain.appendChild(movie);
+
+    if (mode === 'partner') {
+      const call = $('call-area');
+      call.replaceWith(callPH);
+      fsSide.appendChild(call);
+      fsStage.classList.add('with-partner');
+      // partner mode: a single play/pause button only
+      setDisp(fsBack, false); setDisp(fsFwd, false);
+      setDisp(fsSeek, false); setDisp(fsTime, false);
+    } else {
+      fsStage.classList.remove('with-partner');
+      setDisp(fsBack, true); setDisp(fsFwd, true);
+      const seekable = !receivingStream;
+      setDisp(fsSeek, seekable); setDisp(fsTime, seekable);
+    }
+
+    fsStage.classList.add('active');
+    updateFsToggle();
+    updateFsSeek();
+    reqFs(fsStage);
+  }
+
+  function teardownFs() {
+    if (!fsActive) return;
+    fsActive = false;
+    fsStage.classList.remove('active', 'with-partner');
+    // put the movie back
+    if (moviePH.parentNode) moviePH.replaceWith(movie);
+    movie.setAttribute('controls', '');
+    // put the call area back
+    if (callPH.parentNode) callPH.replaceWith($('call-area'));
+    fsMode = null;
+  }
+
+  function exitFs() {
+    if (fsElement()) exitNativeFs();   // fires fullscreenchange -> teardownFs
+    else teardownFs();
+  }
+
+  // control actions (work for both a local file and a received stream)
+  function fsPlayPause() {
+    if (receivingStream) {
+      fsStreamPlaying = !fsStreamPlaying;
+      broadcast({ type: 'ctrl', action: fsStreamPlaying ? 'play' : 'pause' });
+    } else {
+      if (movie.paused) tryPlay(); else movie.pause();
+    }
+    updateFsToggle();
+  }
+  function fsSkip(dir) {
+    if (receivingStream) {
+      broadcast({ type: 'ctrl', action: dir > 0 ? 'fwd' : 'back' });
+    } else {
+      movie.currentTime = Math.max(0, Math.min(movie.duration || Infinity, movie.currentTime + dir * 10));
+    }
+  }
+
+  $('btn-fs-movie').onclick   = () => enterFs('movie');
+  $('btn-fs-partner').onclick = () => enterFs('partner');
+  $('fs-exit').onclick = exitFs;
+  fsToggle.onclick = fsPlayPause;
+  fsBack.onclick   = () => fsSkip(-1);
+  fsFwd.onclick    = () => fsSkip(1);
+  fsSeek.oninput   = () => {
+    if (receivingStream || !isFinite(movie.duration)) return;
+    movie.currentTime = (fsSeek.value / 1000) * movie.duration;
+  };
+
+  movie.addEventListener('play',  updateFsToggle);
+  movie.addEventListener('pause', updateFsToggle);
+  movie.addEventListener('timeupdate', updateFsSeek);
+  movie.addEventListener('loadedmetadata', updateFsSeek);
+
+  document.addEventListener('fullscreenchange', () => { if (!fsElement() && fsActive) teardownFs(); });
+  document.addEventListener('webkitfullscreenchange', () => { if (!fsElement() && fsActive) teardownFs(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && fsActive && !fsElement()) exitFs(); });
 
   // ---------- END SESSION ----------
   $('btn-end').onclick = () => {
