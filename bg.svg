@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800">
+  <defs>
+    <linearGradient id="g1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e2703a"/><stop offset="1" stop-color="#6b1f12"/></linearGradient>
+    <linearGradient id="g2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2f6f8f"/><stop offset="1" stop-color="#0d2233"/></linearGradient>
+    <linearGradient id="g3" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8f2f45"/><stop offset="1" stop-color="#2b0d16"/></linearGradient>
+    <linearGradient id="g4" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#c9a13b"/><stop offset="1" stop-color="#4d3a0e"/></linearGradient>
+    <linearGradient id="g5" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5a3f8f"/><stop offset="1" stop-color="#1c1233"/></linearGradient>
+    <linearGradient id="g6" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2f8f6a"/><stop offset="1" stop-color="#0d3325"/></linearGradient>
+    <linearGradient id="g7" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#b8453a"/><stop offset="1" stop-color="#33110d"/></linearGradient>
+    <linearGradient id="g8" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3a6ab8"/><stop offset="1" stop-color="#0d1a33"/></linearGradient>
+    <linearGradient id="g9" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#888e99"/><stop offset="1" stop-color="#22252b"/></linearGradient>
+  </defs>
+  <rect width="1200" height="800" fill="#0f1115"/>
+  <g stroke="#000" stroke-opacity=".4" stroke-width="2">
+    <rect x="-30" y="-40" width="150" height="210" rx="8" fill="url(#g2)" transform="rotate(-4 45 65)"/>
+    <rect x="130" y="-60" width="160" height="230" rx="8" fill="url(#g7)" transform="rotate(3 210 55)"/>
+    <rect x="300" y="-30" width="145" height="205" rx="8" fill="url(#g4)" transform="rotate(-2 372 72)"/>
+    <rect x="455" y="-55" width="160" height="225" rx="8" fill="url(#g5)" transform="rotate(4 535 57)"/>
+    <rect x="625" y="-35" width="150" height="210" rx="8" fill="url(#g1)" transform="rotate(-3 700 70)"/>
+    <rect x="785" y="-60" width="165" height="235" rx="8" fill="url(#g8)" transform="rotate(2 867 57)"/>
+    <rect x="960" y="-30" width="145" height="205" rx="8" fill="url(#g3)" transform="rotate(-4 1032 72)"/>
+    <rect x="1110" y="-50" width="155" height="220" rx="8" fill="url(#g6)" transform="rotate(3 1187 60)"/>
+
+    <rect x="-45" y="180" width="160" height="225" rx="8" fill="url(#g4)" transform="rotate(3 35 292)"/>
+    <rect x="120" y="185" width="150" height="215" rx="8" fill="url(#g5)" transform="rotate(-3 195 292)"/>
+    <rect x="285" y="190" width="160" height="230" rx="8" fill="url(#g8)" transform="rotate(2 365 305)"/>
+    <rect x="455" y="182" width="145" height="210" rx="8" fill="url(#g7)" transform="rotate(-4 527 287)"/>
+    <rect x="612" y="188" width="160" height="225" rx="8" fill="url(#g6)" transform="rotate(3 692 300)"/>
+    <rect x="782" y="185" width="150" height="215" rx="8" fill="url(#g9)" transform="rotate(-2 857 292)"/>
+    <rect x="945" y="190" width="160" height="228" rx="8" fill="url(#g1)" transform="rotate(4 1025 304)"/>
+    <rect x="1115" y="183" width="150" height="212" rx="8" fill="url(#g2)" transform="rotate(-3 1190 289)"/>
+
+    <rect x="-35" y="420" width="150" height="215" rx="8" fill="url(#g3)" transform="rotate(-2 40 527)"/>
+    <rect x="125" y="428" width="160" height="228" rx="8" fill="url(#g6)" transform="rotate(4 205 542)"/>
+    <rect x="295" y="422" width="145" height="210" rx="8" fill="url(#g1)" transform="rotate(-3 367 527)"/>
+    <rect x="450" y="430" width="160" height="225" rx="8" fill="url(#g2)" transform="rotate(2 530 542)"/>
+    <rect x="620" y="424" width="150" height="212" rx="8" fill="url(#g5)" transform="rotate(-4 695 530)"/>
+    <rect x="780" y="430" width="162" height="230" rx="8" fill="url(#g4)" transform="rotate(3 861 545)"/>
+    <rect x="952" y="425" width="148" height="212" rx="8" fill="url(#g8)" transform="rotate(-2 1026 531)"/>
+    <rect x="1110" y="432" width="155" height="222" rx="8" fill="url(#g7)" transform="rotate(4 1187 543)"/>
+
+    <rect x="-40" y="660" width="158" height="222" rx="8" fill="url(#g8)" transform="rotate(3 39 771)"/>
+    <rect x="128" y="668" width="148" height="210" rx="8" fill="url(#g1)" transform="rotate(-4 202 773)"/>
+    <rect x="288" y="662" width="160" height="226" rx="8" fill="url(#g9)" transform="rotate(2 368 775)"/>
+    <rect x="458" y="670" width="150" height="214" rx="8" fill="url(#g3)" transform="rotate(-3 533 777)"/>
+    <rect x="618" y="663" width="158" height="224" rx="8" fill="url(#g7)" transform="rotate(4 697 775)"/>
+    <rect x="786" y="670" width="148" height="210" rx="8" fill="url(#g2)" transform="rotate(-2 860 775)"/>
+    <rect x="944" y="664" width="160" height="226" rx="8" fill="url(#g5)" transform="rotate(3 1024 777)"/>
+    <rect x="1112" y="670" width="150" height="215" rx="8" fill="url(#g4)" transform="rotate(-3 1187 777)"/>
+  </g>
+  <!-- subtle poster details: title bars and image blocks -->
+  <g fill="#ffffff" opacity=".08">
+    <rect x="150" y="330" width="100" height="10" rx="5"/>
+    <rect x="480" y="90" width="95" height="10" rx="5"/>
+    <rect x="812" y="330" width="90" height="10" rx="5"/>
+    <rect x="322" y="570" width="95" height="10" rx="5"/>
+    <rect x="650" y="90" width="90" height="10" rx="5"/>
+    <rect x="980" y="570" width="95" height="10" rx="5"/>
+    <rect x="152" y="808" width="90" height="10" rx="5"/>
+    <rect x="820" y="808" width="90" height="10" rx="5"/>
+  </g>
+  <!-- vignette so edges melt into the app background -->
+  <radialGradient id="vig" cx="0.5" cy="0.5" r="0.75">
+    <stop offset="0.45" stop-color="#0f1115" stop-opacity="0"/>
+    <stop offset="1" stop-color="#0f1115" stop-opacity="0.9"/>
+  </radialGradient>
+  <rect width="1200" height="800" fill="url(#vig)"/>
+</svg>
