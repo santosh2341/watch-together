@@ -163,6 +163,21 @@
     padding: 10px;
     font-size: 13px;
   }
+  #tap-play {
+    display: none;
+    position: fixed;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 14px;
+    padding: 18px 34px;
+    font-size: 20px;
+    font-weight: 700;
+    z-index: 20;
+    box-shadow: 0 4px 24px rgba(0,0,0,.6);
+  }
   #toast {
     position: fixed;
     bottom: 80px; left: 50%;
@@ -211,9 +226,10 @@
     <video id="movie" controls playsinline></video>
     <div id="file-row">
       <button class="btn secondary" id="btn-file">📁 Choose video file</button>
+      <button class="btn secondary" id="btn-stream" style="display:none">📡 Stream to partner</button>
       <input type="file" id="file-input" accept="video/*" hidden>
     </div>
-    <div class="hint" id="movie-hint">Both of you must choose the <b>same video file</b> on your own phone. Playback then stays in sync automatically.</div>
+    <div class="hint" id="movie-hint">Choose a video file, then either <b>Stream to partner</b> (only you need the file) or have them pick the <b>same file</b> for perfect sync.</div>
   </div>
 
   <div id="mic-row">
@@ -229,6 +245,7 @@
   </div>
 </div>
 
+<button id="tap-play">▶ Tap to play</button>
 <div id="toast"></div>
 
 <script>
@@ -243,6 +260,9 @@
   let localStream = null;
   let isHost = false;
   let suppress = false;     // ignore events we caused ourselves
+  let remoteId = null;      // partner's peer id (for extra calls)
+  let movieCall = null;     // outgoing movie-stream connection
+  let receivingStream = false; // true when partner streams their movie to us
 
   const rand = n => Array.from(crypto.getRandomValues(new Uint8Array(n)))
     .map(b => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[b % 32]).join('');
@@ -300,12 +320,8 @@
       $('btn-create').style.display = 'none';
       setStatus('waiting for partner');
     });
-    peer.on('connection', c => bindConn(c));
-    peer.on('call', incoming => {
-      call = incoming;
-      incoming.answer(localStream);
-      bindCall(incoming);
-    });
+    peer.on('connection', c => { remoteId = c.peer; bindConn(c); });
+    peer.on('call', handleIncomingCall);
   };
 
   $('btn-share').onclick = () => {
@@ -321,15 +337,49 @@
     if (code.length < 4) { $('setup-msg').textContent = 'Enter the room code first.'; return; }
     await getCamera();
     isHost = false;
+    remoteId = 'wt2-' + code;
     peer = newPeer(null);
+    peer.on('call', handleIncomingCall);
     peer.on('open', () => {
-      const c = peer.connect('wt2-' + code, { reliable: true });
+      const c = peer.connect(remoteId, { reliable: true });
       bindConn(c);
-      const outgoing = peer.call('wt2-' + code, localStream);
+      const outgoing = peer.call(remoteId, localStream);
       call = outgoing;
       bindCall(outgoing);
     });
   };
+
+  // ---------- INCOMING CALLS (camera call vs movie stream) ----------
+  function handleIncomingCall(incoming) {
+    if (incoming.metadata && incoming.metadata.type === 'movie') {
+      incoming.answer(); // receive only
+      incoming.on('stream', s => {
+        receivingStream = true;
+        movie.removeAttribute('src');
+        movie.srcObject = s;
+        $('movie-hint').innerHTML = '📡 Receiving partner\'s video stream — they control playback.';
+        toast('Partner is streaming their video to you');
+        tryPlay();
+      });
+      incoming.on('close', () => {
+        receivingStream = false;
+        movie.srcObject = null;
+        $('movie-hint').textContent = 'Stream ended.';
+      });
+    } else {
+      call = incoming;
+      incoming.answer(localStream);
+      bindCall(incoming);
+    }
+  }
+
+  function tryPlay() {
+    movie.play().catch(() => {
+      const b = $('tap-play');
+      b.style.display = 'block';
+      b.onclick = () => { b.style.display = 'none'; movie.play().catch(() => {}); };
+    });
+  }
 
   // ---------- CONNECTIONS ----------
   function bindConn(c) {
@@ -382,6 +432,10 @@
 
   function onMessage(msg) {
     if (!msg || !msg.type) return;
+    if (receivingStream) { // partner's stream controls itself; ignore sync
+      if (msg.type === 'file') toast('Partner picked: ' + msg.name, 3000);
+      return;
+    }
     if (!movie.src && msg.type !== 'file') {
       if (msg.type === 'play') toast('Partner pressed play — choose your file!', 3500);
       return;
@@ -390,7 +444,7 @@
     switch (msg.type) {
       case 'play':
         if (Math.abs(movie.currentTime - msg.time) > DRIFT) movie.currentTime = msg.time;
-        movie.play().catch(() => toast('Tap ▶ once to allow playback', 3500));
+        tryPlay();
         break;
       case 'pause':
         movie.pause();
@@ -420,13 +474,13 @@
     return String(s).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
   }
 
-  movie.addEventListener('play',  () => { if (!suppress) send({ type: 'play',  time: movie.currentTime }); });
-  movie.addEventListener('pause', () => { if (!suppress) send({ type: 'pause', time: movie.currentTime }); });
-  movie.addEventListener('seeked',() => { if (!suppress) send({ type: 'seek',  time: movie.currentTime }); });
+  movie.addEventListener('play',  () => { if (!suppress && !receivingStream) send({ type: 'play',  time: movie.currentTime }); });
+  movie.addEventListener('pause', () => { if (!suppress && !receivingStream) send({ type: 'pause', time: movie.currentTime }); });
+  movie.addEventListener('seeked',() => { if (!suppress && !receivingStream) send({ type: 'seek',  time: movie.currentTime }); });
 
   // host sends heartbeat every 5s so drift never accumulates
   setInterval(() => {
-    if (isHost && movie.src) send({ type: 'sync', time: movie.currentTime, playing: !movie.paused });
+    if (isHost && movie.src && !receivingStream) send({ type: 'sync', time: movie.currentTime, playing: !movie.paused });
   }, 5000);
 
   $('btn-sync').onclick = () => {
@@ -441,10 +495,47 @@
   $('file-input').onchange = e => {
     const f = e.target.files[0];
     if (!f) return;
+    receivingStream = false;
+    movie.srcObject = null;
     movie.src = URL.createObjectURL(f);
-    $('movie-hint').innerHTML = 'Loaded: <b>' + escapeHtml(f.name) + '</b>';
+    $('movie-hint').innerHTML = 'Loaded: <b>' + escapeHtml(f.name) + '</b> — press ▶ (or 📡 Stream if partner doesn\'t have the file).';
+    $('btn-stream').style.display = '';
     send({ type: 'file', name: f.name });
   };
+
+  // ---------- STREAM MOVIE TO PARTNER ----------
+  $('btn-stream').onclick = () => {
+    if (!movie.src) { toast('Choose a video file first'); return; }
+    const cap = movie.captureStream || movie.mozCaptureStream;
+    if (!cap) {
+      toast('Streaming not supported on this phone. Ask partner to pick the same file.', 5000);
+      return;
+    }
+    try {
+      if (movieCall) movieCall.close();
+      const ms = cap.call(movie);
+      movieCall = peer.call(remoteId, ms, { metadata: { type: 'movie' } });
+      tryPlay();
+      toast('📡 Streaming your video to partner', 4000);
+      setTimeout(capMovieBitrate, 1500);
+    } catch (e) { toast('Could not stream: ' + e.message, 4000); }
+  };
+
+  function capMovieBitrate() {
+    const pc = movieCall && movieCall.peerConnection;
+    if (!pc) return;
+    pc.getSenders().forEach(sn => {
+      if (!sn.track) return;
+      const p = sn.getParameters();
+      if (!p.encodings || !p.encodings.length) p.encodings = [{}];
+      if (sn.track.kind === 'video') {
+        p.encodings[0].maxBitrate = lowData ? 300000 : 900000; // movie: 300 kbps vs 900 kbps
+      } else {
+        p.encodings[0].maxBitrate = lowData ? 32000 : 64000;
+      }
+      sn.setParameters(p).catch(() => {});
+    });
+  }
 
   // ---------- MIC SELECTION ----------
   async function listMics() {
@@ -513,6 +604,7 @@
   $('btn-lowdata').onclick = function () {
     lowData = !lowData;
     applyBitrate();
+    capMovieBitrate();
     this.classList.toggle('off', lowData);
     this.textContent = lowData ? '📶 Low data ON' : '📶 Low data';
     toast(lowData ? 'Low data mode: call uses ~100 kbps' : 'Normal quality');
