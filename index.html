@@ -297,6 +297,15 @@
     background: #0b0d11;
   }
   #fs-stage.with-partner #fs-side { display: flex; }
+  /* the call tiles always stack in one narrow column inside the side panel */
+  #fs-side #call-area {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 0;
+    background: transparent;
+    overflow: visible;
+  }
   #fs-side .cam-wrap { width: 100%; }
 
   #fs-controls {
@@ -323,6 +332,21 @@
   #fs-seek { flex: 1; cursor: pointer; accent-color: var(--accent); }
   #fs-time { font-size: 13px; color: var(--muted); min-width: 92px; text-align: center; font-variant-numeric: tabular-nums; }
   #fs-exit { margin-left: auto; }
+
+  /* Mobile / touch only: bigger movie, smaller video-call panel in partner fullscreen */
+  @media (pointer: coarse) {
+    #fs-stage.with-partner #fs-side {
+      width: 22vw;
+      max-width: 130px;
+      min-width: 88px;
+      padding: 6px;
+      gap: 6px;
+    }
+    #fs-side #call-area { gap: 6px; }
+    #fs-controls { padding: 8px 10px; gap: 8px; }
+    #fs-controls button { padding: 8px 11px; }
+    #fs-time { min-width: 0; font-size: 12px; }
+  }
 
   #tap-play {
     display: none;
