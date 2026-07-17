@@ -233,6 +233,7 @@
     font-size: 44px; user-select: none;
   }
   .cam-wrap.cam-off video { display: none; }   /* reveal the avatar when the camera is off */
+  #local-cam { transform: scaleX(-1); }        /* mirror your own preview, like a selfie */
   .cam-label {
     position: absolute;
     bottom: 6px; left: 8px;
@@ -480,13 +481,13 @@
   /* fullscreen control-row extras (mic · cam · reactions · sounds) */
   #fs-controls .fs-icon { font-size: 18px; padding: 8px 10px; line-height: 1; flex: none; }
   #fs-controls .fs-icon.off { background: var(--danger); }
-  .fs-pop-wrap { position: relative; display: inline-flex; flex: none; }
+  /* pop-ups are fixed (not inside the scrolling controls row, so they never get clipped) */
   .social-pop {
-    display: none; position: absolute; bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%);
+    display: none; position: fixed; bottom: 62px; right: 12px;
     background: rgba(20,23,30,.97); border: 1px solid #2a3040; border-radius: 12px;
-    padding: 6px; gap: 4px; box-shadow: 0 6px 22px rgba(0,0,0,.55); z-index: 5;
+    padding: 8px; gap: 6px; box-shadow: 0 6px 22px rgba(0,0,0,.55); z-index: 330;
   }
-  .social-pop.open { display: flex; flex-wrap: wrap; width: 224px; justify-content: center; }
+  .social-pop.open { display: flex; flex-wrap: wrap; width: 210px; justify-content: center; }
   @media (pointer: coarse) {
     #social-row { flex-wrap: nowrap; overflow-x: auto; justify-content: flex-start; }
     #fs-controls { flex-wrap: nowrap; overflow-x: auto; }
@@ -630,23 +631,19 @@
     <div id="fs-main"></div>
     <div id="fs-side"></div>
   </div>
+  <div id="react-pop" class="social-pop"></div>
+  <div id="sound-pop" class="social-pop"></div>
   <div id="fs-controls">
     <button id="fs-back" title="Back 10 seconds"><svg class="ic solid" viewBox="0 0 24 24"><polygon points="11 19 2 12 11 5 11 19"/><polygon points="22 19 13 12 22 5 22 19"/></svg></button>
     <button id="fs-toggle" title="Play / Pause"><svg class="ic solid" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>
     <button id="fs-fwd" title="Forward 10 seconds"><svg class="ic solid" viewBox="0 0 24 24"><polygon points="13 19 22 12 13 5 13 19"/><polygon points="2 19 11 12 2 5 2 19"/></svg></button>
     <input type="range" id="fs-seek" min="0" max="1000" value="0">
     <span id="fs-time">0:00 / 0:00</span>
-    <button id="fs-mic" class="fs-icon" title="Mic on/off">🎤</button>
-    <button id="fs-cam" class="fs-icon" title="Camera on/off">📷</button>
-    <div class="fs-pop-wrap">
-      <button id="fs-react-btn" class="fs-icon" title="Reactions">😀</button>
-      <div id="react-pop" class="social-pop"></div>
-    </div>
-    <div class="fs-pop-wrap">
-      <button id="fs-sound-btn" class="fs-icon" title="Sounds">🔊</button>
-      <div id="sound-pop" class="social-pop"></div>
-    </div>
-    <button class="fs-icon" data-chat title="Chat">💬<span class="sb-badge" style="display:none">0</span></button>
+    <button id="fs-mic" class="fs-icon" title="Mic on/off"></button>
+    <button id="fs-cam" class="fs-icon" title="Camera on/off"></button>
+    <button id="fs-react-btn" class="fs-icon" title="Reactions"></button>
+    <button id="fs-sound-btn" class="fs-icon" title="Sounds"></button>
+    <button id="fs-chat" class="fs-icon" data-chat title="Chat"><span class="sb-badge" style="display:none">0</span></button>
     <button id="fs-exit" title="Exit fullscreen"><svg class="ic" viewBox="0 0 24 24"><path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/></svg> Exit</button>
   </div>
 </div>
@@ -898,6 +895,20 @@
   $('react-pop').innerHTML = reactHTML;   // compact fullscreen pop-ups
   $('sound-pop').innerHTML = soundHTML;
 
+  // SVG icons for the fullscreen control buttons
+  const MIC_SVG     = '<svg class="ic" viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v1a7 7 0 0 1-14 0v-1M12 18v4"/></svg>';
+  const MIC_OFF_SVG = '<svg class="ic" viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v1a7 7 0 0 1-14 0v-1M12 18v4"/><line x1="3" y1="3" x2="21" y2="21"/></svg>';
+  const CAM_SVG     = '<svg class="ic" viewBox="0 0 24 24"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>';
+  const CAM_OFF_SVG = '<svg class="ic" viewBox="0 0 24 24"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/><line x1="2" y1="2" x2="22" y2="22"/></svg>';
+  const SMILE_SVG   = '<svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>';
+  const VOLUME_SVG  = '<svg class="ic" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>';
+  const CHAT_SVG    = '<svg class="ic" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
+  $('fs-mic').innerHTML = MIC_SVG;
+  $('fs-cam').innerHTML = CAM_SVG;
+  $('fs-react-btn').innerHTML = SMILE_SVG;
+  $('fs-sound-btn').innerHTML = VOLUME_SVG;
+  $('fs-chat').insertAdjacentHTML('afterbegin', CHAT_SVG);
+
   // --- floating emoji reactions ---
   const reactionLayer = $('reaction-layer');
   function spawnReaction(emoji) {
@@ -1006,7 +1017,7 @@
       closePops();
       return;
     }
-    if (!e.target.closest('.fs-pop-wrap')) closePops();  // clicking elsewhere closes the pop-ups
+    if (!e.target.closest('.social-pop')) closePops();  // clicking elsewhere closes the pop-ups
   });
 
   // ---------- HOST ----------
@@ -1463,7 +1474,7 @@
     if (t) t.enabled = on;
     $('mic-lbl').textContent = on ? 'Mic on' : 'Mic off';
     $('btn-mic').classList.toggle('off', !on);
-    const fm = $('fs-mic'); if (fm) { fm.textContent = on ? '🎤' : '🔇'; fm.classList.toggle('off', !on); }
+    const fm = $('fs-mic'); if (fm) { fm.innerHTML = on ? MIC_SVG : MIC_OFF_SVG; fm.classList.toggle('off', !on); }
   }
   function setCam(on) {
     const t = localStream && localStream.getVideoTracks()[0];
@@ -1471,7 +1482,7 @@
     $('cam-lbl').textContent = on ? 'Cam on' : 'Cam off';
     $('btn-cam').classList.toggle('off', !on);
     document.getElementById('tile-local').classList.toggle('cam-off', !on);
-    const fc = $('fs-cam'); if (fc) { fc.textContent = on ? '📷' : '🚫'; fc.classList.toggle('off', !on); }
+    const fc = $('fs-cam'); if (fc) { fc.innerHTML = on ? CAM_SVG : CAM_OFF_SVG; fc.classList.toggle('off', !on); }
     broadcast({ type: 'cam', on });   // let partners show my avatar when cam is off
   }
   function toggleMic() { const t = localStream && localStream.getAudioTracks()[0]; if (!t) return; setMic(!t.enabled); }
