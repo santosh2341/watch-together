@@ -483,7 +483,7 @@
   #fs-controls .fs-icon.off { background: var(--danger); }
   /* pop-ups are fixed (not inside the scrolling controls row, so they never get clipped) */
   .social-pop {
-    display: none; position: fixed; bottom: 62px; right: 12px;
+    display: none; position: fixed; bottom: 74px; left: 50%; transform: translateX(-50%);
     background: rgba(20,23,30,.97); border: 1px solid #2a3040; border-radius: 12px;
     padding: 8px; gap: 6px; box-shadow: 0 6px 22px rgba(0,0,0,.55); z-index: 330;
   }
@@ -631,8 +631,6 @@
     <div id="fs-main"></div>
     <div id="fs-side"></div>
   </div>
-  <div id="react-pop" class="social-pop"></div>
-  <div id="sound-pop" class="social-pop"></div>
   <div id="fs-controls">
     <button id="fs-back" title="Back 10 seconds"><svg class="ic solid" viewBox="0 0 24 24"><polygon points="11 19 2 12 11 5 11 19"/><polygon points="22 19 13 12 22 5 22 19"/></svg></button>
     <button id="fs-toggle" title="Play / Pause"><svg class="ic solid" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>
@@ -641,8 +639,8 @@
     <span id="fs-time">0:00 / 0:00</span>
     <button id="fs-mic" class="fs-icon" title="Mic on/off"></button>
     <button id="fs-cam" class="fs-icon" title="Camera on/off"></button>
-    <button id="fs-react-btn" class="fs-icon" title="Reactions"></button>
-    <button id="fs-sound-btn" class="fs-icon" title="Sounds"></button>
+    <button id="fs-react-btn" class="fs-icon" data-pop="react" title="Reactions"></button>
+    <button id="fs-sound-btn" class="fs-icon" data-pop="sound" title="Sounds"></button>
     <button id="fs-chat" class="fs-icon" data-chat title="Chat"><span class="sb-badge" style="display:none">0</span></button>
     <button id="fs-exit" title="Exit fullscreen"><svg class="ic" viewBox="0 0 24 24"><path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/></svg> Exit</button>
   </div>
@@ -663,6 +661,8 @@
 <!-- Reactions / chat overlays -->
 <div id="reaction-layer"></div>
 <div id="chat-overlay"></div>
+<div id="react-pop" class="social-pop"></div>
+<div id="sound-pop" class="social-pop"></div>
 <div id="chat-panel">
   <div id="chat-head"><span>💬 Chat</span><button id="chat-x" title="Close">✕</button></div>
   <div id="chat-msgs"></div>
@@ -890,9 +890,7 @@
 
   const reactHTML = REACTS.map(e => '<button class="sb-btn" data-react="' + e + '">' + e + '</button>').join('');
   const soundHTML = SOUNDS.map(s => '<button class="sb-btn" data-sound="' + s.id + '" title="' + s.id + '">' + s.e + '</button>').join('');
-  $('social-row').innerHTML = reactHTML + '<span class="sb-div"></span>' + soundHTML + '<span class="sb-div"></span>' +
-    '<button class="sb-btn sb-chat" data-chat title="Chat">💬<span class="sb-badge" style="display:none">0</span></button>';
-  $('react-pop').innerHTML = reactHTML;   // compact fullscreen pop-ups
+  $('react-pop').innerHTML = reactHTML;   // emoji pickers behind the compact buttons
   $('sound-pop').innerHTML = soundHTML;
 
   // SVG icons for the fullscreen control buttons
@@ -908,6 +906,12 @@
   $('fs-react-btn').innerHTML = SMILE_SVG;
   $('fs-sound-btn').innerHTML = VOLUME_SVG;
   $('fs-chat').insertAdjacentHTML('afterbegin', CHAT_SVG);
+
+  // compact 3-button main bar (reactions · sounds · chat) — matches the fullscreen controls
+  $('social-row').innerHTML =
+    '<button class="sb-btn" data-pop="react" title="Reactions">' + SMILE_SVG + '</button>' +
+    '<button class="sb-btn" data-pop="sound" title="Sounds">' + VOLUME_SVG + '</button>' +
+    '<button class="sb-btn" data-chat title="Chat">' + CHAT_SVG + '<span class="sb-badge" style="display:none">0</span></button>';
 
   // --- floating emoji reactions ---
   const reactionLayer = $('reaction-layer');
@@ -1002,13 +1006,18 @@
   });
   $('chat-x').onclick = closeChat;
 
-  // pop-ups for the compact fullscreen buttons
+  // reaction / sound pop-ups, opened by the compact buttons (main bar + fullscreen)
   function closePops() { $('react-pop').classList.remove('open'); $('sound-pop').classList.remove('open'); }
-  $('fs-react-btn').onclick = e => { e.stopPropagation(); $('sound-pop').classList.remove('open'); $('react-pop').classList.toggle('open'); };
-  $('fs-sound-btn').onclick = e => { e.stopPropagation(); $('react-pop').classList.remove('open'); $('sound-pop').classList.toggle('open'); };
+  function togglePop(which) {
+    const rp = $('react-pop'), sp = $('sound-pop');
+    if (which === 'react') { sp.classList.remove('open'); rp.classList.toggle('open'); }
+    else                   { rp.classList.remove('open'); sp.classList.toggle('open'); }
+  }
 
-  // one delegated handler drives every reaction / sound / chat button (main bar + fullscreen pop-ups)
+  // one delegated handler drives every social button, wherever it lives
   document.addEventListener('click', e => {
+    const pop = e.target.closest('[data-pop]');
+    if (pop) { togglePop(pop.getAttribute('data-pop')); return; }
     const b = e.target.closest('[data-react],[data-sound],[data-chat]');
     if (b) {
       if (b.hasAttribute('data-react'))      sendReaction(b.getAttribute('data-react'));
@@ -1580,6 +1589,8 @@
     fsStage.appendChild($('reaction-layer'));
     fsStage.appendChild($('chat-overlay'));
     fsStage.appendChild($('chat-panel'));
+    fsStage.appendChild($('react-pop'));
+    fsStage.appendChild($('sound-pop'));
     updateFsToggle();
     updateFsSeek();
     reqFs(fsStage);
@@ -1615,6 +1626,8 @@
     document.body.appendChild($('reaction-layer'));
     document.body.appendChild($('chat-overlay'));
     document.body.appendChild($('chat-panel'));
+    document.body.appendChild($('react-pop'));
+    document.body.appendChild($('sound-pop'));
     fsMode = null;
   }
 
