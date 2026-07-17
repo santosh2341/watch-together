@@ -1031,7 +1031,7 @@
   }
 
   function updateFsSeek() {
-    if (fsMode !== 'movie' || receivingStream || !isFinite(movie.duration)) return;
+    if (!fsActive || receivingStream || !isFinite(movie.duration)) return;
     fsSeek.value = movie.duration ? Math.round((movie.currentTime / movie.duration) * 1000) : 0;
     fsTime.textContent = fmtTime(movie.currentTime) + ' / ' + fmtTime(movie.duration);
   }
@@ -1083,12 +1083,17 @@
   // Show the controls, then auto-hide them after 5s of no interaction.
   let fsHideTimer = null;
   function showFsControls() {
+    if (!fsActive) return;
     fsStage.classList.remove('controls-hidden');
     clearTimeout(fsHideTimer);
-    fsHideTimer = setTimeout(() => { if (fsActive) fsStage.classList.add('controls-hidden'); }, 5000);
+    fsHideTimer = setTimeout(() => {
+      if (fsActive) fsStage.classList.add('controls-hidden');
+    }, 5000);
   }
-  // Tap/click anywhere on the stage brings the controls back (and restarts the timer).
-  fsStage.addEventListener('click', () => { if (fsActive) showFsControls(); });
+  // A real tap/click anywhere on the stage brings the controls back and restarts the 5s timer.
+  // (pointerdown fires reliably on touch screens; click alone can be swallowed on mobile.)
+  fsStage.addEventListener('pointerdown', showFsControls);
+  fsStage.addEventListener('click', showFsControls);
 
   function teardownFs() {
     if (!fsActive) return;
