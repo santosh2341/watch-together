@@ -250,6 +250,14 @@
     border-radius: 10px;
     max-height: 42vh;
   }
+  #yt-wrap { display: none; width: 100%; background: #000; border-radius: 10px; aspect-ratio: 16/9; max-height: 42vh; }
+  #yt-wrap iframe, #yt-player { width: 100%; height: 100%; border: 0; border-radius: 10px; }
+  #yt-wrap:fullscreen { border-radius: 0; }
+  body.yt #movie { display: none; }
+  body.yt #yt-wrap { display: block; }
+  #yt-row { display: flex; gap: 8px; }
+  #yt-url { flex: 1; min-width: 0; background: var(--bg); border: 1px solid #2a3040; border-radius: 10px; padding: 10px; color: var(--text); font-size: 14px; }
+  #yt-row .btn { max-width: 130px; padding: 10px 14px; font-size: 14px; margin: 0; }
   .hint { font-size: 12px; color: var(--muted); text-align: center; }
   #file-row { display: flex; gap: 8px; flex-wrap: wrap; }
   #file-row .btn { padding: 12px; font-size: 14px; }
@@ -324,6 +332,7 @@
     }
     #player-area { grid-column: 1; grid-row: 1; min-height: 0; }
     #movie { max-height: none; flex: 1; height: 100%; min-height: 0; object-fit: contain; }
+    #yt-wrap { max-height: none; flex: 1; height: 100%; min-height: 0; aspect-ratio: auto; }
     #call-area {
       grid-column: 2; grid-row: 1;
       grid-template-columns: 1fr;   /* one wide tile per row, filling the side panel */
@@ -601,6 +610,7 @@
 
   <div id="player-area">
     <video id="movie" controls playsinline></video>
+    <div id="yt-wrap"><div id="yt-player"></div></div>
     <div id="remote-controls">
       <button id="rc-back" title="Back 10 seconds"><svg class="ic solid" viewBox="0 0 24 24"><polygon points="11 19 2 12 11 5 11 19"/><polygon points="22 19 13 12 22 5 22 19"/></svg> 10s</button>
       <button id="rc-play" title="Play"><svg class="ic solid" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg> Play</button>
@@ -613,6 +623,10 @@
       <button class="btn secondary" id="btn-host-file"><svg class="ic" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg> Host a file</button>
       <input type="file" id="file-input" accept="video/*" hidden>
       <input type="file" id="host-file-input" accept="video/*,audio/*" hidden>
+    </div>
+    <div id="yt-row">
+      <input type="text" id="yt-url" placeholder="Paste a YouTube link to watch together" autocomplete="off">
+      <button class="btn secondary" id="btn-yt"><svg class="ic" viewBox="0 0 24 24"><path d="M22.5 7a2.6 2.6 0 0 0-1.8-1.8C19 4.7 12 4.7 12 4.7s-7 0-8.7.5A2.6 2.6 0 0 0 1.5 7 27 27 0 0 0 1 12a27 27 0 0 0 .5 5 2.6 2.6 0 0 0 1.8 1.8c1.7.5 8.7.5 8.7.5s7 0 8.7-.5A2.6 2.6 0 0 0 22.5 17 27 27 0 0 0 23 12a27 27 0 0 0-.5-5z"/><polygon points="9.8 15.3 15.6 12 9.8 8.7 9.8 15.3" fill="currentColor" stroke="none"/></svg> Watch</button>
     </div>
     <div class="hint" id="movie-hint">Choose a video file, then either <b>Stream to room</b> (only you need the file) or have everyone pick the <b>same file</b> for perfect sync.</div>
     <div class="hint" id="host-status" style="display:none"></div>
@@ -1512,6 +1526,10 @@
     if (msg.type === 'dl-done')    { dlOnDone(msg.id); return; }
     if (msg.type === 'dl-error')   { toast('Download: ' + (msg.msg || 'error'), 4000); return; }
 
+    // ---- YouTube watch-together ----
+    if (msg.type === 'yt-load') { ytRemoteLoad(msg.vid, msg.t || 0); return; }
+    if (msg.type === 'yt')      { ytRemote(msg); return; }
+
     if (msg.type === 'peers') { // host told us who's here — connect to everyone
       enterMain();
       updateStatus();
@@ -1609,6 +1627,7 @@
   $('file-input').onchange = e => {
     const f = e.target.files[0];
     if (!f) return;
+    ytShow(false); try { if (ytPlayer && ytPlayer.pauseVideo) ytPlayer.pauseVideo(); } catch (er) {}
     receivingStream = false;
     movie.srcObject = null;
     $('remote-controls').style.display = 'none';
@@ -1617,6 +1636,74 @@
     $('btn-stream').style.display = '';
     broadcast({ type: 'file', name: f.name });
   };
+
+  // ---------- YOUTUBE (watch a YouTube video together, in sync) ----------
+  let ytPlayer = null, ytActive = false, ytSuppress = false, ytPending = null;
+  const YT_DRIFT = 1.2;
+
+  window.onYouTubeIframeAPIReady = () => {
+    if (ytPending) { const q = ytPending; ytPending = null; ytCreateOrLoad(q.vid, q.time); }
+  };
+  function ytApiLoad() {
+    if (window.YT && window.YT.Player) return;
+    if (document.getElementById('yt-api')) return;
+    const s = document.createElement('script'); s.id = 'yt-api'; s.src = 'https://www.youtube.com/iframe_api';
+    document.head.appendChild(s);
+  }
+  function ytExtractId(u) {
+    u = (u || '').trim();
+    if (/^[A-Za-z0-9_-]{11}$/.test(u)) return u;
+    const m = u.match(/(?:youtu\.be\/|[?&]v=|\/embed\/|\/shorts\/|\/v\/|\/live\/)([A-Za-z0-9_-]{11})/);
+    return m ? m[1] : null;
+  }
+  function ytShow(on) { ytActive = on; document.body.classList.toggle('yt', on); }
+  function ytCreateOrLoad(vid, time) {
+    if (!(window.YT && window.YT.Player)) { ytPending = { vid, time }; ytApiLoad(); return; }
+    if (!ytPlayer) {
+      ytPlayer = new window.YT.Player('yt-player', {
+        width: '100%', height: '100%', videoId: vid,
+        playerVars: { rel: 0, modestbranding: 1, playsinline: 1, start: Math.floor(time || 0) },
+        events: { onStateChange: ytOnState }
+      });
+    } else {
+      ytPlayer.loadVideoById({ videoId: vid, startSeconds: Math.floor(time || 0) });
+    }
+  }
+  function ytTime()   { return (ytPlayer && ytPlayer.getCurrentTime) ? (ytPlayer.getCurrentTime() || 0) : 0; }
+  function ytPaused() { return !(ytPlayer && ytPlayer.getPlayerState) || ytPlayer.getPlayerState() !== 1; }
+  function ytPlay()   { if (ytPlayer && ytPlayer.playVideo)  ytPlayer.playVideo(); }
+  function ytPause()  { if (ytPlayer && ytPlayer.pauseVideo) ytPlayer.pauseVideo(); }
+  function ytSeek(t)  { if (ytPlayer && ytPlayer.seekTo)     ytPlayer.seekTo(t, true); }
+  function ytOnState(e) {
+    if (!ytActive || ytSuppress) return;
+    if (e.data === 1)      broadcast({ type: 'yt', a: 'play',  t: ytTime() });
+    else if (e.data === 2) broadcast({ type: 'yt', a: 'pause', t: ytTime() });
+  }
+  function ytRemoteLoad(vid, time) {
+    ytShow(true);
+    receivingStream = false; movie.srcObject = null; movie.removeAttribute('src'); try { movie.pause(); } catch (e) {}
+    ytApiLoad(); ytCreateOrLoad(vid, time);
+    $('movie-hint').textContent = 'Watching a YouTube video together — playback stays in sync.';
+  }
+  function ytRemote(msg) {
+    if (!ytActive || !ytPlayer) return;
+    ytSuppress = true;
+    if (msg.a === 'play')       { if (Math.abs(ytTime() - msg.t) > YT_DRIFT) ytSeek(msg.t); ytPlay(); }
+    else if (msg.a === 'pause') { ytPause(); if (Math.abs(ytTime() - msg.t) > YT_DRIFT) ytSeek(msg.t); }
+    else if (msg.a === 'sync')  { const target = msg.playing ? msg.t + 0.3 : msg.t; if (Math.abs(ytTime() - target) > YT_DRIFT) ytSeek(target); if (msg.playing && ytPaused()) ytPlay(); if (!msg.playing && !ytPaused()) ytPause(); }
+    setTimeout(() => ytSuppress = false, 500);
+  }
+  $('btn-yt').onclick = () => {
+    const vid = ytExtractId($('yt-url').value);
+    if (!vid) { toast('Paste a valid YouTube link', 3000); return; }
+    ytShow(true);
+    receivingStream = false; movie.srcObject = null; movie.removeAttribute('src'); try { movie.pause(); } catch (e) {}
+    ytApiLoad(); ytCreateOrLoad(vid, 0);
+    broadcast({ type: 'yt-load', vid, t: 0 });
+    $('movie-hint').textContent = 'Watching a YouTube video together — playback stays in sync.';
+  };
+  $('yt-url').addEventListener('keydown', e => { if (e.key === 'Enter') $('btn-yt').onclick(); });
+  setInterval(() => { if (ytActive && isHost && ytPlayer) broadcast({ type: 'yt', a: 'sync', t: ytTime(), playing: !ytPaused() }); }, 4000);
 
   // ---------- MOVIE CAPTURE (with iPhone/Safari fallback) ----------
   function captureMovieStream() {
@@ -1903,7 +1990,13 @@
   // Movie-only: use the device's NATIVE video fullscreen. On phones this hides the
   // browser tab/URL bar completely and shows the native playback controls, while our
   // play/pause/seek listeners still broadcast so everyone stays in sync.
+  function ytFullscreen() {
+    const el = $('yt-wrap');
+    const fn = el.requestFullscreen || el.webkitRequestFullscreen;
+    if (fn) { try { const r = fn.call(el); if (r && r.catch) r.catch(() => {}); } catch (e) {} }
+  }
   function fullscreenMovie() {
+    if (ytActive) { ytFullscreen(); return; }
     const v = movie;
     if (v.requestFullscreen)            { v.requestFullscreen().catch(() => enterFs('movie')); }
     else if (v.webkitRequestFullscreen) { v.webkitRequestFullscreen(); }
@@ -1911,7 +2004,10 @@
     else                                { enterFs('movie'); }            // fallback: custom overlay
   }
   $('btn-fs-movie').onclick   = fullscreenMovie;
-  $('btn-fs-partner').onclick = () => enterFs('partner');
+  $('btn-fs-partner').onclick = () => {
+    if (ytActive) { toast('Partner panel isn\'t available in YouTube full screen yet — opening full screen', 4000); ytFullscreen(); return; }
+    enterFs('partner');
+  };
   $('fs-exit').onclick = exitFs;
   fsToggle.onclick = fsPlayPause;
   fsBack.onclick   = () => fsSkip(-1);
