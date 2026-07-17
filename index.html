@@ -59,6 +59,41 @@
   }
   #status.connected { color: #4caf7d; }
 
+  /* ---- Header profile chip (avatar · name · room · mbps) ---- */
+  #top-right { display: flex; align-items: center; gap: 14px; }
+  #top-profile { display: none; align-items: center; gap: 8px; font-size: 12px; }
+  #tp-avatar {
+    width: 30px; height: 30px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 17px; background: var(--accent); cursor: pointer;
+    user-select: none; flex: none; border: 2px solid rgba(255,255,255,.18);
+  }
+  #tp-avatar:hover { border-color: #fff; }
+  #tp-name { font-weight: 600; color: var(--text); max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #top-profile .sep { color: var(--muted); }
+  #tp-room { color: var(--muted); }
+  #tp-room b { color: var(--text); font-weight: 600; letter-spacing: 1px; }
+  #tp-mbps { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  @media (max-width: 620px) {
+    #tp-name, #tp-room, #top-profile .sep, #status { display: none; }
+  }
+
+  /* ---- Edit-profile modal ---- */
+  #edit-modal {
+    display: none; position: fixed; inset: 0; z-index: 200;
+    background: rgba(0,0,0,.6);
+    align-items: center; justify-content: center; padding: 16px;
+  }
+  #edit-card {
+    background: var(--card); border: 1px solid #2a3040; border-radius: 16px;
+    padding: 18px; width: 100%; max-width: 380px;
+    display: flex; flex-direction: column; gap: 14px; align-items: center;
+    max-height: 92vh; overflow-y: auto;
+  }
+  #edit-card h3 { font-size: 16px; }
+  #edit-actions { display: flex; gap: 10px; width: 100%; }
+  #edit-actions .btn { flex: 1; margin: 0; max-width: none; }
+
   /* ---- Setup screen ---- */
   #setup {
     flex: 1;
@@ -430,7 +465,17 @@
 
 <header>
   <h1><img src="logo.svg" alt="" style="width:24px;height:24px"> Watch Together</h1>
-  <span id="status">not connected</span>
+  <div id="top-right">
+    <div id="top-profile">
+      <div id="tp-avatar" title="Edit your name &amp; avatar">🍿</div>
+      <span id="tp-name"></span>
+      <span class="sep">·</span>
+      <span id="tp-room"></span>
+      <span class="sep">·</span>
+      <span id="tp-mbps">– Mbps</span>
+    </div>
+    <span id="status">not connected</span>
+  </div>
 </header>
 
 <!-- SETUP -->
@@ -532,6 +577,18 @@
   </div>
 </div>
 
+<!-- EDIT PROFILE MODAL -->
+<div id="edit-modal">
+  <div id="edit-card">
+    <h3>Edit your name &amp; avatar</h3>
+    <div id="edit-body"></div>
+    <div id="edit-actions">
+      <button class="btn secondary" id="edit-close">Cancel</button>
+      <button class="btn" id="edit-save">Save</button>
+    </div>
+  </div>
+</div>
+
 <button id="tap-play"><svg class="ic solid" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg> Tap to play</button>
 <div id="toast"></div>
 
@@ -553,6 +610,8 @@
   let ending = false;
   let lowData = false;
   let audioCtx = null, movieSrcNode = null; // for iOS canvas-capture audio
+  let myRoomCode = '';           // current room code (shown in the header)
+  let movieInCall = null;        // incoming movie-stream call (counted in live Mbps)
 
   // peers: id -> { conn, call (their cam), movieOut (our movie to them) }
   const peers = new Map();
@@ -578,6 +637,7 @@
   function enterMain() {
     $('setup').style.display = 'none';
     $('main').classList.add('active');
+    updateTopChip();
   }
 
   async function getCamera() {
@@ -683,6 +743,64 @@
     tile.classList.toggle('cam-off', !!p.camOff);
   }
 
+  // ---------- HEADER CHIP + LIVE EDIT ----------
+  const profileBox = $('profile-box');
+
+  function updateTopChip() {
+    $('tp-avatar').textContent = profile.emoji;
+    $('tp-avatar').style.background = profile.color;
+    $('tp-name').textContent = profile.name || 'You';
+    $('top-profile').style.display = 'flex';
+  }
+
+  function openEdit() {
+    $('edit-body').appendChild(profileBox);   // reuse the same picker inside the modal
+    nameInput.value = (profile.name && profile.name !== 'Guest') ? profile.name : '';
+    refreshAvatarUI();
+    $('edit-modal').style.display = 'flex';
+  }
+  function closeEdit(save) {
+    if (save) {
+      saveProfile();               // persist + refresh my own tile
+      updateTopChip();
+      broadcast({ type: 'profile', name: profile.name, emoji: profile.emoji, color: profile.color });
+    }
+    $('setup').insertBefore(profileBox, $('cap-row'));  // return the picker to the setup screen
+    $('edit-modal').style.display = 'none';
+  }
+  $('tp-avatar').onclick = openEdit;
+  $('edit-save').onclick = () => closeEdit(true);
+  $('edit-close').onclick = () => closeEdit(false);
+  $('edit-modal').onclick = e => { if (e.target === $('edit-modal')) closeEdit(false); };
+
+  // ---------- LIVE NETWORK SPEED (Mbps) ----------
+  let _mbpsBytes = 0, _mbpsT = 0;
+  async function sampleMbps() {
+    const pcs = [];
+    peers.forEach(p => {
+      if (p.call && p.call.peerConnection) pcs.push(p.call.peerConnection);
+      if (p.movieOut && p.movieOut.peerConnection) pcs.push(p.movieOut.peerConnection);
+    });
+    if (movieInCall && movieInCall.peerConnection) pcs.push(movieInCall.peerConnection);
+    let total = 0;
+    for (const pc of pcs) {
+      try {
+        const stats = await pc.getStats();
+        stats.forEach(r => {
+          if (r.type === 'inbound-rtp' && r.bytesReceived) total += r.bytesReceived;
+          else if (r.type === 'outbound-rtp' && r.bytesSent) total += r.bytesSent;
+        });
+      } catch (e) {}
+    }
+    const now = performance.now();
+    if (_mbpsT && total >= _mbpsBytes) {
+      const mbps = Math.max(0, (total - _mbpsBytes) * 8 / ((now - _mbpsT) / 1000) / 1e6);
+      $('tp-mbps').textContent = (mbps < 10 ? mbps.toFixed(2) : mbps.toFixed(1)) + ' Mbps';
+    }
+    _mbpsBytes = total; _mbpsT = now;
+  }
+  setInterval(() => { if (peers.size) sampleMbps(); }, 2000);
+
   // ---------- HOST ----------
   $('btn-create').onclick = async () => {
     saveProfile();
@@ -693,6 +811,8 @@
     peer = newPeer('wt2-' + code);
     peer.on('open', () => {
       $('room-code').textContent = code;
+      myRoomCode = code;
+      $('tp-room').innerHTML = 'Room <b>' + code + '</b>';
       $('room-info').style.display = 'flex';
       $('btn-create').style.display = 'none';
       $('cap-row').style.display = 'none';
@@ -716,6 +836,8 @@
     await getCamera();
     isHost = false;
     hostId = 'wt2-' + code;
+    myRoomCode = code;
+    $('tp-room').innerHTML = 'Room <b>' + code + '</b>';
     peer = newPeer(null);
     peer.on('open', () => {
       connectTo(hostId);
@@ -813,6 +935,7 @@
   function handleIncomingCall(incoming) {
     if (incoming.metadata && incoming.metadata.type === 'movie') {
       incoming.answer(); // receive only
+      movieInCall = incoming;
       incoming.on('stream', s => {
         receivingStream = true;
         movie.removeAttribute('src');
@@ -824,6 +947,7 @@
       });
       incoming.on('close', () => {
         receivingStream = false;
+        movieInCall = null;
         movie.srcObject = null;
         $('remote-controls').style.display = 'none';
         $('movie-hint').textContent = 'Stream ended.';
