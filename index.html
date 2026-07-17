@@ -258,6 +258,11 @@
   #yt-row { display: flex; gap: 8px; }
   #yt-url { flex: 1; min-width: 0; background: var(--bg); border: 1px solid #2a3040; border-radius: 10px; padding: 10px; color: var(--text); font-size: 14px; }
   #yt-row .btn { max-width: 130px; padding: 10px 14px; font-size: 14px; margin: 0; }
+  body.audio-mode #yt-wrap { flex: none; width: 220px; max-width: 100%; height: auto; aspect-ratio: 16/9; max-height: none; }
+  #mix-row { display: flex; gap: 16px; padding: 8px 12px; background: var(--card); flex-wrap: wrap; align-items: center; }
+  #mix-row .mix { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); flex: 1; min-width: 170px; }
+  #mix-row .mix input[type="range"] { flex: 1; accent-color: var(--accent); min-width: 80px; }
+  #mix-row .mix span { white-space: nowrap; }
   .hint { font-size: 12px; color: var(--muted); text-align: center; }
   #file-row { display: flex; gap: 8px; flex-wrap: wrap; }
   #file-row .btn { padding: 12px; font-size: 14px; }
@@ -327,7 +332,7 @@
     #main.active {
       display: grid;
       grid-template-columns: 1fr minmax(240px, 26%);
-      grid-template-rows: 1fr auto auto;
+      grid-template-rows: 1fr auto auto auto;
       gap: 0;
     }
     #player-area { grid-column: 1; grid-row: 1; min-height: 0; }
@@ -344,7 +349,8 @@
       overflow-y: auto;
     }
     #mic-row { grid-column: 1 / -1; grid-row: 2; }
-    #controls { grid-column: 1 / -1; grid-row: 3; }
+    #mix-row { grid-column: 1 / -1; grid-row: 3; }
+    #controls { grid-column: 1 / -1; grid-row: 4; }
   }
 
   /* ---- Fullscreen view buttons (in player area) ---- */
@@ -625,8 +631,9 @@
       <input type="file" id="host-file-input" accept="video/*,audio/*" hidden>
     </div>
     <div id="yt-row">
-      <input type="text" id="yt-url" placeholder="Paste a YouTube link to watch together" autocomplete="off">
+      <input type="text" id="yt-url" placeholder="Paste a YouTube link (video or music)" autocomplete="off">
       <button class="btn secondary" id="btn-yt"><svg class="ic" viewBox="0 0 24 24"><path d="M22.5 7a2.6 2.6 0 0 0-1.8-1.8C19 4.7 12 4.7 12 4.7s-7 0-8.7.5A2.6 2.6 0 0 0 1.5 7 27 27 0 0 0 1 12a27 27 0 0 0 .5 5 2.6 2.6 0 0 0 1.8 1.8c1.7.5 8.7.5 8.7.5s7 0 8.7-.5A2.6 2.6 0 0 0 22.5 17 27 27 0 0 0 23 12a27 27 0 0 0-.5-5z"/><polygon points="9.8 15.3 15.6 12 9.8 8.7 9.8 15.3" fill="currentColor" stroke="none"/></svg> Watch</button>
+      <button class="btn secondary" id="btn-yt-audio" style="display:none">🎵 Audio</button>
     </div>
     <div class="hint" id="movie-hint">Choose a video file, then either <b>Stream to room</b> (only you need the file) or have everyone pick the <b>same file</b> for perfect sync.</div>
     <div class="hint" id="host-status" style="display:none"></div>
@@ -649,6 +656,11 @@
   <div id="mic-row">
     <label for="mic-select"><svg class="ic" viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v1a7 7 0 0 1-14 0v-1M12 18v4"/></svg> Mic:</label>
     <select id="mic-select"></select>
+  </div>
+
+  <div id="mix-row">
+    <label class="mix"><span>🎬 Media</span><input type="range" id="vol-media" min="0" max="100" value="100" title="Movie / music volume"></label>
+    <label class="mix"><span>🗣️ Call</span><input type="range" id="vol-call" min="0" max="100" value="100" title="Video-call volume"></label>
   </div>
 
   <div id="controls">
@@ -727,6 +739,7 @@
   let movieStreamMs = null;     // our outgoing movie MediaStream
   let ending = false;
   let lowData = false;
+  let mediaVol = 1, callVol = 1;   // volume mixer levels (0..1)
   let audioCtx = null, movieSrcNode = null; // for iOS canvas-capture audio
   let myRoomCode = '';           // current room code (shown in the header)
   let movieInCall = null;        // incoming movie-stream call (counted in live Mbps)
@@ -1401,6 +1414,7 @@
       wrap.appendChild(avatar); wrap.appendChild(v); wrap.appendChild(lab);
       $('call-area').appendChild(wrap);
       applyProfileToTile(id);   // fill in name + avatar if we already know them
+      try { v.volume = callVol; } catch (e) {}   // respect the call-volume slider
       el = v;
     }
     el.srcObject = stream;
@@ -1656,14 +1670,19 @@
     const m = u.match(/(?:youtu\.be\/|[?&]v=|\/embed\/|\/shorts\/|\/v\/|\/live\/)([A-Za-z0-9_-]{11})/);
     return m ? m[1] : null;
   }
-  function ytShow(on) { ytActive = on; document.body.classList.toggle('yt', on); }
+  function ytShow(on) {
+    ytActive = on;
+    document.body.classList.toggle('yt', on);
+    $('btn-yt-audio').style.display = on ? '' : 'none';
+    if (!on) document.body.classList.remove('audio-mode');
+  }
   function ytCreateOrLoad(vid, time) {
     if (!(window.YT && window.YT.Player)) { ytPending = { vid, time }; ytApiLoad(); return; }
     if (!ytPlayer) {
       ytPlayer = new window.YT.Player('yt-player', {
         width: '100%', height: '100%', videoId: vid,
         playerVars: { rel: 0, modestbranding: 1, playsinline: 1, start: Math.floor(time || 0) },
-        events: { onStateChange: ytOnState }
+        events: { onReady: () => applyMediaVol(), onStateChange: ytOnState }
       });
     } else {
       ytPlayer.loadVideoById({ videoId: vid, startSeconds: Math.floor(time || 0) });
@@ -1840,6 +1859,27 @@
     this.classList.toggle('off', lowData);
     $('ld-lbl').textContent = lowData ? 'Low data ON' : 'Low data';
     toast(lowData ? 'Low data mode on' : 'Normal quality');
+  };
+
+  // ---------- VOLUME MIXER + MUSIC (audio) MODE ----------
+  function applyMediaVol() {
+    try { movie.volume = mediaVol; } catch (e) {}
+    if (ytPlayer && ytPlayer.setVolume) { try { ytPlayer.setVolume(Math.round(mediaVol * 100)); } catch (e) {} }
+  }
+  function applyCallVol() {
+    peers.forEach((p, id) => { const v = document.getElementById('cam-' + id); if (v) { try { v.volume = callVol; } catch (e) {} } });
+  }
+  $('vol-media').oninput = function () { mediaVol = this.value / 100; applyMediaVol(); };
+  $('vol-call').oninput  = function () { callVol  = this.value / 100; applyCallVol(); };
+
+  // audio (music) mode — minimise the YouTube video and just listen together
+  $('btn-yt-audio').onclick = function () {
+    const audio = !document.body.classList.contains('audio-mode');
+    document.body.classList.toggle('audio-mode', audio);
+    this.textContent = audio ? '🎬 Video' : '🎵 Audio';
+    $('movie-hint').textContent = audio
+      ? 'Listening to music together 🎵 (audio mode) — the video is minimised, sound stays in sync.'
+      : 'Watching a YouTube video together — playback stays in sync.';
   };
 
   // ---------- CUSTOM FULLSCREEN (movie only / movie + partner) ----------
