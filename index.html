@@ -477,6 +477,22 @@
   #chat-input { flex: 1; background: var(--bg); border: 1px solid #2a3040; border-radius: 10px; padding: 10px; color: var(--text); font-size: 14px; }
   #chat-send { background: var(--accent); color: #fff; border: none; border-radius: 10px; padding: 0 14px; cursor: pointer; font-size: 16px; }
 
+  /* fullscreen control-row extras (mic · cam · reactions · sounds) */
+  #fs-controls .fs-icon { font-size: 18px; padding: 8px 10px; line-height: 1; flex: none; }
+  #fs-controls .fs-icon.off { background: var(--danger); }
+  .fs-pop-wrap { position: relative; display: inline-flex; flex: none; }
+  .social-pop {
+    display: none; position: absolute; bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%);
+    background: rgba(20,23,30,.97); border: 1px solid #2a3040; border-radius: 12px;
+    padding: 6px; gap: 4px; box-shadow: 0 6px 22px rgba(0,0,0,.55); z-index: 5;
+  }
+  .social-pop.open { display: flex; flex-wrap: wrap; width: 224px; justify-content: center; }
+  @media (pointer: coarse) {
+    #social-row { flex-wrap: nowrap; overflow-x: auto; justify-content: flex-start; }
+    #fs-controls { flex-wrap: nowrap; overflow-x: auto; }
+    #fs-controls #fs-seek { min-width: 56px; }
+  }
+
   #tap-play {
     display: none;
     position: fixed;
@@ -614,13 +630,23 @@
     <div id="fs-main"></div>
     <div id="fs-side"></div>
   </div>
-  <div id="fs-social" class="social-bar"></div>
   <div id="fs-controls">
     <button id="fs-back" title="Back 10 seconds"><svg class="ic solid" viewBox="0 0 24 24"><polygon points="11 19 2 12 11 5 11 19"/><polygon points="22 19 13 12 22 5 22 19"/></svg></button>
     <button id="fs-toggle" title="Play / Pause"><svg class="ic solid" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>
     <button id="fs-fwd" title="Forward 10 seconds"><svg class="ic solid" viewBox="0 0 24 24"><polygon points="13 19 22 12 13 5 13 19"/><polygon points="2 19 11 12 2 5 2 19"/></svg></button>
     <input type="range" id="fs-seek" min="0" max="1000" value="0">
     <span id="fs-time">0:00 / 0:00</span>
+    <button id="fs-mic" class="fs-icon" title="Mic on/off">🎤</button>
+    <button id="fs-cam" class="fs-icon" title="Camera on/off">📷</button>
+    <div class="fs-pop-wrap">
+      <button id="fs-react-btn" class="fs-icon" title="Reactions">😀</button>
+      <div id="react-pop" class="social-pop"></div>
+    </div>
+    <div class="fs-pop-wrap">
+      <button id="fs-sound-btn" class="fs-icon" title="Sounds">🔊</button>
+      <div id="sound-pop" class="social-pop"></div>
+    </div>
+    <button class="fs-icon" data-chat title="Chat">💬<span class="sb-badge" style="display:none">0</span></button>
     <button id="fs-exit" title="Exit fullscreen"><svg class="ic" viewBox="0 0 24 24"><path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/></svg> Exit</button>
   </div>
 </div>
@@ -865,14 +891,12 @@
   const REACTS = ['❤️','😂','👍','😮','😢','🔥','👏','🎉'];
   const SOUNDS = [{ id:'airhorn', e:'📣' }, { id:'drum', e:'🥁' }, { id:'bell', e:'🔔' }, { id:'boom', e:'💥' }, { id:'tada', e:'✨' }];
 
-  const socialHTML =
-    REACTS.map(e => '<button class="sb-btn" data-react="' + e + '">' + e + '</button>').join('') +
-    '<span class="sb-div"></span>' +
-    SOUNDS.map(s => '<button class="sb-btn" data-sound="' + s.id + '" title="' + s.id + '">' + s.e + '</button>').join('') +
-    '<span class="sb-div"></span>' +
+  const reactHTML = REACTS.map(e => '<button class="sb-btn" data-react="' + e + '">' + e + '</button>').join('');
+  const soundHTML = SOUNDS.map(s => '<button class="sb-btn" data-sound="' + s.id + '" title="' + s.id + '">' + s.e + '</button>').join('');
+  $('social-row').innerHTML = reactHTML + '<span class="sb-div"></span>' + soundHTML + '<span class="sb-div"></span>' +
     '<button class="sb-btn sb-chat" data-chat title="Chat">💬<span class="sb-badge" style="display:none">0</span></button>';
-  $('social-row').innerHTML = socialHTML;
-  $('fs-social').innerHTML = socialHTML;
+  $('react-pop').innerHTML = reactHTML;   // compact fullscreen pop-ups
+  $('sound-pop').innerHTML = soundHTML;
 
   // --- floating emoji reactions ---
   const reactionLayer = $('reaction-layer');
@@ -967,13 +991,22 @@
   });
   $('chat-x').onclick = closeChat;
 
-  // one delegated handler drives both the main bar and the fullscreen bar
+  // pop-ups for the compact fullscreen buttons
+  function closePops() { $('react-pop').classList.remove('open'); $('sound-pop').classList.remove('open'); }
+  $('fs-react-btn').onclick = e => { e.stopPropagation(); $('sound-pop').classList.remove('open'); $('react-pop').classList.toggle('open'); };
+  $('fs-sound-btn').onclick = e => { e.stopPropagation(); $('react-pop').classList.remove('open'); $('sound-pop').classList.toggle('open'); };
+
+  // one delegated handler drives every reaction / sound / chat button (main bar + fullscreen pop-ups)
   document.addEventListener('click', e => {
     const b = e.target.closest('[data-react],[data-sound],[data-chat]');
-    if (!b) return;
-    if (b.hasAttribute('data-react'))      sendReaction(b.getAttribute('data-react'));
-    else if (b.hasAttribute('data-sound')) sendSound(b.getAttribute('data-sound'));
-    else if (b.hasAttribute('data-chat'))  toggleChat();
+    if (b) {
+      if (b.hasAttribute('data-react'))      sendReaction(b.getAttribute('data-react'));
+      else if (b.hasAttribute('data-sound')) sendSound(b.getAttribute('data-sound'));
+      else if (b.hasAttribute('data-chat'))  toggleChat();
+      closePops();
+      return;
+    }
+    if (!e.target.closest('.fs-pop-wrap')) closePops();  // clicking elsewhere closes the pop-ups
   });
 
   // ---------- HOST ----------
@@ -1425,22 +1458,28 @@
   }
 
   // ---------- MIC / CAM / LOW DATA TOGGLES ----------
-  $('btn-mic').onclick = function () {
+  function setMic(on) {
     const t = localStream && localStream.getAudioTracks()[0];
-    if (!t) return;
-    t.enabled = !t.enabled;
-    $('mic-lbl').textContent = t.enabled ? 'Mic on' : 'Mic off';
-    this.classList.toggle('off', !t.enabled);
-  };
-  $('btn-cam').onclick = function () {
+    if (t) t.enabled = on;
+    $('mic-lbl').textContent = on ? 'Mic on' : 'Mic off';
+    $('btn-mic').classList.toggle('off', !on);
+    const fm = $('fs-mic'); if (fm) { fm.textContent = on ? '🎤' : '🔇'; fm.classList.toggle('off', !on); }
+  }
+  function setCam(on) {
     const t = localStream && localStream.getVideoTracks()[0];
-    if (!t) return;
-    t.enabled = !t.enabled;
-    $('cam-lbl').textContent = t.enabled ? 'Cam on' : 'Cam off';
-    this.classList.toggle('off', !t.enabled);
-    document.getElementById('tile-local').classList.toggle('cam-off', !t.enabled);
-    broadcast({ type: 'cam', on: t.enabled });   // let partners show my avatar when cam is off
-  };
+    if (t) t.enabled = on;
+    $('cam-lbl').textContent = on ? 'Cam on' : 'Cam off';
+    $('btn-cam').classList.toggle('off', !on);
+    document.getElementById('tile-local').classList.toggle('cam-off', !on);
+    const fc = $('fs-cam'); if (fc) { fc.textContent = on ? '📷' : '🚫'; fc.classList.toggle('off', !on); }
+    broadcast({ type: 'cam', on });   // let partners show my avatar when cam is off
+  }
+  function toggleMic() { const t = localStream && localStream.getAudioTracks()[0]; if (!t) return; setMic(!t.enabled); }
+  function toggleCam() { const t = localStream && localStream.getVideoTracks()[0]; if (!t) return; setCam(!t.enabled); }
+  $('btn-mic').onclick = toggleMic;
+  $('btn-cam').onclick = toggleCam;
+  $('fs-mic').onclick = toggleMic;
+  $('fs-cam').onclick = toggleCam;
   $('btn-lowdata').onclick = function () {
     lowData = !lowData;
     applyBitrateAll();
@@ -1526,6 +1565,10 @@
     setDisp(fsTime, !receivingStream);
 
     fsStage.classList.add('active');
+    // move the reaction/chat overlays inside the stage so they render over the movie in fullscreen
+    fsStage.appendChild($('reaction-layer'));
+    fsStage.appendChild($('chat-overlay'));
+    fsStage.appendChild($('chat-panel'));
     updateFsToggle();
     updateFsSeek();
     reqFs(fsStage);
@@ -1557,6 +1600,10 @@
     movie.setAttribute('controls', '');
     // put the call area back
     if (callPH.parentNode) callPH.replaceWith($('call-area'));
+    // return the reaction/chat overlays to the page body
+    document.body.appendChild($('reaction-layer'));
+    document.body.appendChild($('chat-overlay'));
+    document.body.appendChild($('chat-panel'));
     fsMode = null;
   }
 
