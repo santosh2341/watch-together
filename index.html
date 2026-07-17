@@ -127,6 +127,45 @@
     border-radius: 10px;
   }
 
+  /* ---- Name + avatar picker ---- */
+  #profile-box {
+    display: flex; flex-direction: column; align-items: center; gap: 12px;
+    width: 100%; max-width: 340px;
+    background: rgba(26,30,38,.55);
+    border: 1px solid #2a3040; border-radius: 14px;
+    padding: 16px;
+  }
+  #avatar-preview {
+    width: 84px; height: 84px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 46px; background: var(--accent);
+    box-shadow: 0 4px 16px rgba(0,0,0,.45);
+    user-select: none;
+  }
+  #name-input {
+    background: var(--bg); border: 1px solid #2a3040; border-radius: 10px;
+    padding: 12px; font-size: 16px; color: var(--text); width: 100%; text-align: center;
+  }
+  .pick-label { font-size: 12px; color: var(--muted); align-self: flex-start; margin: 2px 0 -4px 2px; }
+  #avatar-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(40px, 1fr));
+    gap: 6px; width: 100%; max-height: 168px; overflow-y: auto;
+    background: var(--bg); border: 1px solid #2a3040; border-radius: 12px; padding: 8px;
+  }
+  #avatar-grid .av {
+    aspect-ratio: 1; display: flex; align-items: center; justify-content: center;
+    font-size: 22px; border-radius: 8px; cursor: pointer;
+    border: 2px solid transparent;
+  }
+  #avatar-grid .av:hover { background: #2a3040; }
+  #avatar-grid .av.sel { border-color: var(--accent); background: #2a3040; }
+  #color-row { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+  #color-row .sw {
+    width: 30px; height: 30px; border-radius: 50%; cursor: pointer;
+    border: 3px solid transparent;
+  }
+  #color-row .sw.sel { border-color: #fff; }
+
   /* ---- Main screen ---- */
   #main { display: none; flex: 1; flex-direction: column; }
   #main.active { display: flex; }
@@ -148,7 +187,14 @@
   .cam-wrap video {
     width: 100%; height: 100%;
     object-fit: cover;
+    position: relative; z-index: 1;
   }
+  .cam-avatar {
+    position: absolute; inset: 0; z-index: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 44px; user-select: none;
+  }
+  .cam-wrap.cam-off video { display: none; }   /* reveal the avatar when the camera is off */
   .cam-label {
     position: absolute;
     bottom: 6px; left: 8px;
@@ -391,6 +437,18 @@
 <div id="setup">
   <img src="logo.svg" alt="Watch Together" style="width:96px;height:96px">
   <p>Watch a movie together with a live video call. One person creates a room, the others join with the code.</p>
+
+  <!-- NAME + AVATAR -->
+  <div id="profile-box">
+    <div id="avatar-preview"><span id="avatar-emoji">🍿</span></div>
+    <button type="button" class="btn secondary" id="btn-random" style="max-width:220px">🎲 Surprise me</button>
+    <input type="text" id="name-input" placeholder="Enter your name" maxlength="20" autocomplete="off">
+    <div class="pick-label">Choose your character</div>
+    <div id="avatar-grid"></div>
+    <div class="pick-label">Background colour</div>
+    <div id="color-row"></div>
+  </div>
+
   <div id="cap-row">
     <label for="cap-select">How many watching?</label>
     <select id="cap-select">
@@ -421,7 +479,7 @@
 <!-- MAIN -->
 <div id="main">
   <div id="call-area">
-    <div class="cam-wrap" id="tile-local"><video id="local-cam" autoplay playsinline muted></video><span class="cam-label">You</span></div>
+    <div class="cam-wrap" id="tile-local"><div class="cam-avatar" id="local-avatar"></div><video id="local-cam" autoplay playsinline muted></video><span class="cam-label">You</span></div>
   </div>
 
   <div id="player-area">
@@ -558,8 +616,76 @@
     return p;
   }
 
+  // ---------- PROFILE (name + avatar, remembered on this device) ----------
+  const AVATARS = ['🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐨','🐯','🦁','🐮','🐷','🐸','🐵','🐔','🐧','🐦','🦄','🐝','🦋','🐢','🐙','🦑','🦕','🦖','🐬','🐳','🦩','🦔','🦦','🦥','🦧','🐺','🐗','🦓','🦒','🦘','🐊','👾','👽','🤖','🎃','👻','💀','🤡','👹','👺','🐲','🐉','🧸','🥷','🦸','🦹','😎','🤠','🥳','🤩','😺','😸','😻','🤪','🍕','🍔','🌮','🍩','🍦','🍓','🍉','🍒','🍑','🥑','🍄','🌭','🍿','🧁','🍪','🌟','⚡','🔥','🌈','🎩','👑','🎸','🚀','⚽','🎮','🎈','🪄','💎'];
+  const COLORS  = ['#4f8cff','#ff6b6b','#ffd93d','#6bcb77','#a66bff','#ff9f43','#3ec9d6','#ff6bcb','#f76e11','#20bf6b','#eb3b5a','#778beb'];
+
+  let profile = { name: '', emoji: '🍿', color: '#4f8cff' };
+  try {
+    const saved = JSON.parse(localStorage.getItem('wt_profile') || 'null');
+    if (saved && saved.emoji) profile = { name: saved.name || '', emoji: saved.emoji, color: saved.color || '#4f8cff' };
+  } catch (e) {}
+
+  const avGrid = $('avatar-grid'), colRow = $('color-row'), nameInput = $('name-input');
+
+  function refreshAvatarUI() {
+    $('avatar-emoji').textContent = profile.emoji;
+    $('avatar-preview').style.background = profile.color;
+    avGrid.querySelectorAll('.av').forEach(d => d.classList.toggle('sel', d.dataset.emoji === profile.emoji));
+    colRow.querySelectorAll('.sw').forEach(s => s.classList.toggle('sel', s.dataset.color === profile.color));
+  }
+
+  AVATARS.forEach(em => {
+    const d = document.createElement('div');
+    d.className = 'av';
+    d.dataset.emoji = em;
+    d.textContent = em;
+    d.onclick = () => { profile.emoji = em; refreshAvatarUI(); };
+    avGrid.appendChild(d);
+  });
+  COLORS.forEach(c => {
+    const s = document.createElement('div');
+    s.className = 'sw';
+    s.dataset.color = c;
+    s.style.background = c;
+    s.onclick = () => { profile.color = c; refreshAvatarUI(); };
+    colRow.appendChild(s);
+  });
+  nameInput.value = profile.name;
+  nameInput.oninput = () => { profile.name = nameInput.value.trim(); };
+  $('btn-random').onclick = () => {
+    profile.emoji = AVATARS[Math.floor(Math.random() * AVATARS.length)];
+    profile.color = COLORS[Math.floor(Math.random() * COLORS.length)];
+    refreshAvatarUI();
+  };
+  refreshAvatarUI();
+
+  function saveProfile() {
+    if (!profile.name) profile.name = 'Guest';
+    try { localStorage.setItem('wt_profile', JSON.stringify(profile)); } catch (e) {}
+    const av = document.querySelector('#tile-local .cam-avatar');
+    const lab = document.querySelector('#tile-local .cam-label');
+    if (av)  { av.textContent = profile.emoji; av.style.background = profile.color; }
+    if (lab) lab.textContent = profile.emoji + ' ' + profile.name + ' (You)';
+  }
+
+  function applyProfileToTile(id) {
+    const p = peers.get(id);
+    const tile = document.getElementById('tile-' + id);
+    if (!tile || !p) return;
+    if (p.profile) {
+      const av = tile.querySelector('.cam-avatar');
+      const lab = tile.querySelector('.cam-label');
+      if (av)  { av.textContent = p.profile.emoji || ''; av.style.background = p.profile.color || '#14171d'; }
+      if (lab) lab.textContent = (p.profile.emoji ? p.profile.emoji + ' ' : '') + (p.profile.name || 'Partner');
+    }
+    // show their avatar (hide the black video) when their camera is off
+    tile.classList.toggle('cam-off', !!p.camOff);
+  }
+
   // ---------- HOST ----------
   $('btn-create').onclick = async () => {
+    saveProfile();
     await getCamera();
     isHost = true;
     capacity = parseInt($('cap-select').value, 10) || 2;
@@ -586,6 +712,7 @@
   $('btn-join').onclick = async () => {
     const code = $('join-code').value.trim().toUpperCase();
     if (code.length < 4) { $('setup-msg').textContent = 'Enter the room code first.'; return; }
+    saveProfile();
     await getCamera();
     isHost = false;
     hostId = 'wt2-' + code;
@@ -614,6 +741,10 @@
     c.on('open', () => {
       P(c.peer).conn = c;
       updateStatus();
+      // tell the other side who we are (name + avatar) and our current camera state
+      c.send({ type: 'profile', name: profile.name, emoji: profile.emoji, color: profile.color });
+      const _vt = localStream && localStream.getVideoTracks()[0];
+      c.send({ type: 'cam', on: _vt ? _vt.enabled : true });
       if (isHost) {
         enterMain();
         // tell the newcomer who else is in the room
@@ -656,6 +787,8 @@
       const wrap = document.createElement('div');
       wrap.className = 'cam-wrap';
       wrap.id = 'tile-' + id;
+      const avatar = document.createElement('div');
+      avatar.className = 'cam-avatar';
       const v = document.createElement('video');
       v.id = 'cam-' + id;
       v.autoplay = true;
@@ -663,8 +796,9 @@
       const lab = document.createElement('span');
       lab.className = 'cam-label';
       lab.textContent = 'Partner ' + (document.querySelectorAll('.cam-wrap').length);
-      wrap.appendChild(v); wrap.appendChild(lab);
+      wrap.appendChild(avatar); wrap.appendChild(v); wrap.appendChild(lab);
       $('call-area').appendChild(wrap);
+      applyProfileToTile(id);   // fill in name + avatar if we already know them
       el = v;
     }
     el.srcObject = stream;
@@ -760,6 +894,19 @@
     if (msg.type === 'full') {
       $('setup-msg').textContent = 'Room is full.';
       toast('Room is full', 3000);
+      return;
+    }
+
+    if (msg.type === 'profile') { // someone shared their name + avatar
+      P(fromId).profile = { name: msg.name, emoji: msg.emoji, color: msg.color };
+      applyProfileToTile(fromId);
+      return;
+    }
+
+    if (msg.type === 'cam') { // a peer turned their camera on/off
+      P(fromId).camOff = !msg.on;
+      const tile = document.getElementById('tile-' + fromId);
+      if (tile) tile.classList.toggle('cam-off', !msg.on);
       return;
     }
 
@@ -988,6 +1135,8 @@
     t.enabled = !t.enabled;
     $('cam-lbl').textContent = t.enabled ? 'Cam on' : 'Cam off';
     this.classList.toggle('off', !t.enabled);
+    document.getElementById('tile-local').classList.toggle('cam-off', !t.enabled);
+    broadcast({ type: 'cam', on: t.enabled });   // let partners show my avatar when cam is off
   };
   $('btn-lowdata').onclick = function () {
     lowData = !lowData;
