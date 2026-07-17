@@ -740,6 +740,7 @@
   let ending = false;
   let lowData = false;
   let mediaVol = 1, callVol = 1;   // volume mixer levels (0..1)
+  let resumeKey = null;            // identity of the currently loaded video, for resume-position
   let audioCtx = null, movieSrcNode = null; // for iOS canvas-capture audio
   let myRoomCode = '';           // current room code (shown in the header)
   let movieInCall = null;        // incoming movie-stream call (counted in live Mbps)
@@ -1258,6 +1259,7 @@
     document.body.appendChild(a); a.click(); a.remove();
     // 2) load into the synced player
     receivingStream = false; movie.srcObject = null; movie.src = url;
+    resumeKey = 'file:' + off.name + '_' + off.size;
     $('btn-stream').style.display = '';
     $('movie-hint').innerHTML = 'Downloaded &amp; saved <b>' + escapeHtml(off.name) + '</b> — loaded into the player.';
     broadcast({ type: 'file', name: off.name });
@@ -1432,6 +1434,7 @@
       movieInCall = incoming;
       incoming.on('stream', s => {
         receivingStream = true;
+        resumeKey = null;
         movie.removeAttribute('src');
         movie.srcObject = s;
         $('remote-controls').style.display = 'flex';
@@ -1646,6 +1649,7 @@
     movie.srcObject = null;
     $('remote-controls').style.display = 'none';
     movie.src = URL.createObjectURL(f);
+    resumeKey = 'file:' + f.name + '_' + f.size;   // remember position for this file
     $('movie-hint').innerHTML = 'Loaded: <b>' + escapeHtml(f.name) + '</b> — press play (or Stream to room if others don\'t have the file).';
     $('btn-stream').style.display = '';
     broadcast({ type: 'file', name: f.name });
@@ -1696,11 +1700,13 @@
   function ytOnState(e) {
     if (!ytActive || ytSuppress) return;
     if (e.data === 1)      broadcast({ type: 'yt', a: 'play',  t: ytTime() });
-    else if (e.data === 2) broadcast({ type: 'yt', a: 'pause', t: ytTime() });
+    else if (e.data === 2) { broadcast({ type: 'yt', a: 'pause', t: ytTime() }); saveResume(); }
+    else if (e.data === 0) { saveResume(); }   // ended → forget the position
   }
   function ytRemoteLoad(vid, time) {
     ytShow(true);
     receivingStream = false; movie.srcObject = null; movie.removeAttribute('src'); try { movie.pause(); } catch (e) {}
+    resumeKey = 'yt:' + vid;
     ytApiLoad(); ytCreateOrLoad(vid, time);
     $('movie-hint').textContent = 'Watching a YouTube video together — playback stays in sync.';
   }
@@ -1717,8 +1723,10 @@
     if (!vid) { toast('Paste a valid YouTube link', 3000); return; }
     ytShow(true);
     receivingStream = false; movie.srcObject = null; movie.removeAttribute('src'); try { movie.pause(); } catch (e) {}
-    ytApiLoad(); ytCreateOrLoad(vid, 0);
-    broadcast({ type: 'yt-load', vid, t: 0 });
+    const t0 = readResume('yt:' + vid);          // resume this video where we left off
+    resumeKey = 'yt:' + vid;
+    ytApiLoad(); ytCreateOrLoad(vid, t0);
+    broadcast({ type: 'yt-load', vid, t: t0 });
     $('movie-hint').textContent = 'Watching a YouTube video together — playback stays in sync.';
   };
   $('yt-url').addEventListener('keydown', e => { if (e.key === 'Enter') $('btn-yt').onclick(); });
@@ -1881,6 +1889,47 @@
       ? 'Listening to music together 🎵 (audio mode) — the video is minimised, sound stays in sync.'
       : 'Watching a YouTube video together — playback stays in sync.';
   };
+
+  // ---------- RESUME WHERE YOU LEFT OFF ----------
+  function readResume(key) {
+    try { const m = JSON.parse(localStorage.getItem('wt_resume') || '{}'); return (m[key] && m[key].t) || 0; } catch (e) { return 0; }
+  }
+  function writeResume(key, t) {
+    try {
+      const m = JSON.parse(localStorage.getItem('wt_resume') || '{}');
+      m[key] = { t: Math.floor(t), u: Date.now() };
+      const ks = Object.keys(m);
+      if (ks.length > 60) ks.sort((a, b) => m[a].u - m[b].u).slice(0, ks.length - 60).forEach(k => delete m[k]);
+      localStorage.setItem('wt_resume', JSON.stringify(m));
+    } catch (e) {}
+  }
+  function clearResume(key) {
+    try { const m = JSON.parse(localStorage.getItem('wt_resume') || '{}'); delete m[key]; localStorage.setItem('wt_resume', JSON.stringify(m)); } catch (e) {}
+  }
+  function curTime()    { return ytActive ? ytTime() : (movie.currentTime || 0); }
+  function curDur()     { return ytActive ? (ytPlayer && ytPlayer.getDuration ? (ytPlayer.getDuration() || 0) : 0) : movie.duration; }
+  function curPlaying() { return ytActive ? !ytPaused() : (!!movie.src && !movie.paused); }
+  function saveResume() {
+    if (!resumeKey) return;
+    const t = curTime(), d = curDur();
+    if (t > 5 && (!d || !isFinite(d) || t < d - 8)) writeResume(resumeKey, t);
+    else if (d && isFinite(d) && t >= d - 8) clearResume(resumeKey);   // finished → forget it
+  }
+  setInterval(() => { if (resumeKey && curPlaying()) saveResume(); }, 5000);
+  window.addEventListener('beforeunload', saveResume);
+
+  // local file: jump to the saved spot once the video metadata is ready
+  movie.addEventListener('loadedmetadata', () => {
+    if (ytActive || !resumeKey) return;
+    const t = readResume(resumeKey);
+    if (t > 5 && isFinite(movie.duration) && t < movie.duration - 8) {
+      suppress = true;
+      try { movie.currentTime = Math.max(0, t - 3); } catch (e) {}
+      setTimeout(() => suppress = false, 400);
+      toast('Resumed from ' + fmtTime(t), 2500);
+    }
+  });
+  movie.addEventListener('pause', saveResume);
 
   // ---------- CUSTOM FULLSCREEN (movie only / movie + partner) ----------
   const fsStage = $('fs-stage');
