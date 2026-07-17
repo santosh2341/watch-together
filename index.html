@@ -251,8 +251,17 @@
     max-height: 42vh;
   }
   .hint { font-size: 12px; color: var(--muted); text-align: center; }
-  #file-row { display: flex; gap: 8px; }
+  #file-row { display: flex; gap: 8px; flex-wrap: wrap; }
   #file-row .btn { padding: 12px; font-size: 14px; }
+
+  /* host-a-file download card */
+  #dl-card { display: none; background: var(--card); border: 1px solid #2a3040; border-radius: 12px; padding: 12px; margin-top: 4px; text-align: left; }
+  #dl-name { font-size: 13px; margin-bottom: 8px; }
+  #dl-bar { height: 8px; background: #2a3040; border-radius: 6px; overflow: hidden; }
+  #dl-fill { height: 100%; width: 0%; background: var(--accent); transition: width .2s ease; }
+  #dl-info { font-size: 12px; color: var(--muted); margin: 8px 0; font-variant-numeric: tabular-nums; }
+  #dl-actions { display: flex; gap: 8px; }
+  #dl-actions .btn { max-width: 160px; padding: 8px 14px; font-size: 14px; margin: 0; }
 
   #remote-controls {
     display: none;
@@ -601,9 +610,21 @@
     <div id="file-row">
       <button class="btn secondary" id="btn-file"><svg class="ic" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg> Choose video file</button>
       <button class="btn secondary" id="btn-stream" style="display:none"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49M7.76 16.24a6 6 0 0 1 0-8.49M19.07 4.93a10 10 0 0 1 0 14.14M4.93 19.07a10 10 0 0 1 0-14.14"/></svg> Stream to room</button>
+      <button class="btn secondary" id="btn-host-file"><svg class="ic" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg> Host a file</button>
       <input type="file" id="file-input" accept="video/*" hidden>
+      <input type="file" id="host-file-input" accept="video/*,audio/*" hidden>
     </div>
     <div class="hint" id="movie-hint">Choose a video file, then either <b>Stream to room</b> (only you need the file) or have everyone pick the <b>same file</b> for perfect sync.</div>
+    <div class="hint" id="host-status" style="display:none"></div>
+    <div id="dl-card">
+      <div id="dl-name"></div>
+      <div id="dl-bar"><div id="dl-fill"></div></div>
+      <div id="dl-info"></div>
+      <div id="dl-actions">
+        <button id="dl-go" class="btn secondary">Download</button>
+        <button id="dl-pause" class="btn secondary" style="display:none">Pause</button>
+      </div>
+    </div>
     <div id="view-row">
       <button id="btn-fs-movie" title="Fullscreen — movie only"><svg class="ic" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg> Full screen (movie only)</button>
       <button id="btn-fs-partner" title="Fullscreen with video call"><svg class="ic" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3M3 16v3a2 2 0 0 0 2 2h3"/><rect x="13" y="5" width="8" height="6" rx="1"/><rect x="13" y="14" width="8" height="5" rx="1"/></svg> Full screen + partner</button>
@@ -1029,6 +1050,218 @@
     if (!e.target.closest('.social-pop')) closePops();  // clicking elsewhere closes the pop-ups
   });
 
+  // ---------- HOST A FILE (resumable, pausable peer-to-peer download) ----------
+  const DL_CHUNK     = 16384;            // 16 KB chunks (safe over data channels)
+  const DL_WINDOW    = 96 * DL_CHUNK;    // ~1.5 MB in flight before waiting for an ack
+  const DL_ACK_EVERY = 24 * DL_CHUNK;    // receiver acks about every ~384 KB
+
+  const hostedFiles = new Map();         // fileId -> File we are offering
+  const hostSends   = new Map();         // "peerId|fileId" -> { offset, acked, paused, sending }
+  const dlOffers    = new Map();         // fileId -> { name, size, mime, fromId }
+  const dlState     = new Map();         // fileId -> { received, seq, active, paused, finished }
+  let dlActiveId = null;                 // fileId we're currently receiving binary for
+  let dlAckPending = 0;
+  const dlQueue = []; let dlBusy = false;
+
+  const fmtBytes = n => n >= 1e9 ? (n/1e9).toFixed(2)+' GB' : n >= 1e6 ? (n/1e6).toFixed(1)+' MB' : (n/1e3).toFixed(0)+' KB';
+
+  // --- IndexedDB: keeps partial downloads across interruptions and sessions ---
+  let _idb = null;
+  function idbOpen() {
+    return new Promise((res, rej) => {
+      if (_idb) return res(_idb);
+      const r = indexedDB.open('wt-downloads', 1);
+      r.onupgradeneeded = () => {
+        const db = r.result;
+        if (!db.objectStoreNames.contains('chunks')) db.createObjectStore('chunks', { keyPath: ['fileId', 'seq'] });
+        if (!db.objectStoreNames.contains('meta'))   db.createObjectStore('meta',   { keyPath: 'fileId' });
+      };
+      r.onsuccess = () => { _idb = r.result; res(_idb); };
+      r.onerror   = () => rej(r.error);
+    });
+  }
+  function idbMeta(fileId) {
+    return idbOpen().then(db => new Promise(res => {
+      const rq = db.transaction('meta','readonly').objectStore('meta').get(fileId);
+      rq.onsuccess = () => res(rq.result || null); rq.onerror = () => res(null);
+    })).catch(() => null);
+  }
+  function idbPutMeta(m) {
+    return idbOpen().then(db => new Promise((res, rej) => {
+      const tx = db.transaction('meta','readwrite'); tx.objectStore('meta').put(m);
+      tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error);
+    }));
+  }
+  function idbPutChunk(fileId, seq, buf) {
+    return idbOpen().then(db => new Promise((res, rej) => {
+      const tx = db.transaction('chunks','readwrite'); tx.objectStore('chunks').put({ fileId, seq, buf });
+      tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error);
+    }));
+  }
+  function idbChunks(fileId) {
+    return idbOpen().then(db => new Promise(res => {
+      const range = IDBKeyRange.bound([fileId, 0], [fileId, Number.MAX_SAFE_INTEGER]);
+      const rq = db.transaction('chunks','readonly').objectStore('chunks').getAll(range);
+      rq.onsuccess = () => res(rq.result || []); rq.onerror = () => res([]);
+    })).catch(() => []);
+  }
+  function idbClear(fileId) {
+    return idbOpen().then(db => new Promise(res => {
+      const tx = db.transaction(['chunks','meta'],'readwrite');
+      tx.objectStore('chunks').delete(IDBKeyRange.bound([fileId, 0], [fileId, Number.MAX_SAFE_INTEGER]));
+      tx.objectStore('meta').delete(fileId);
+      tx.oncomplete = () => res(); tx.onerror = () => res();
+    })).catch(() => {});
+  }
+
+  // --- host side: offer a file and stream byte ranges on request ---
+  $('btn-host-file').onclick = () => $('host-file-input').click();
+  $('host-file-input').onchange = e => {
+    const f = e.target.files[0]; if (!f) return;
+    const id = f.name + '_' + f.size + '_' + (f.lastModified || 0);
+    hostedFiles.set(id, f);
+    broadcast({ type: 'file-offer', id, name: f.name, size: f.size, mime: f.type || 'application/octet-stream' });
+    $('host-status').style.display = 'block';
+    $('host-status').innerHTML = 'You are sharing <b>' + escapeHtml(f.name) + '</b> (' + fmtBytes(f.size) + ') — your partner can download it (keep this tab open while they do).';
+    if (peers.size === 0) toast('Shared — others can download once they join', 3500);
+    e.target.value = '';
+  };
+
+  function hostStartSend(peerId, fileId, offset) {
+    const f = hostedFiles.get(fileId); const p = P(peerId);
+    if (!f) { if (p.conn && p.conn.open) p.conn.send({ type: 'dl-error', id: fileId, msg: 'File not available — ask the host to re-share it' }); return; }
+    const key = peerId + '|' + fileId;
+    let st = hostSends.get(key);
+    if (!st) { st = { offset: offset, acked: offset, paused: false, sending: false }; hostSends.set(key, st); }
+    else { st.paused = false; st.offset = offset; st.acked = offset; }
+    hostPump(peerId, fileId);
+  }
+  function hostOnAck(peerId, fileId, offset) {
+    const st = hostSends.get(peerId + '|' + fileId); if (!st) return;
+    if (offset > st.acked) st.acked = offset;
+    hostPump(peerId, fileId);
+  }
+  function hostOnPause(peerId, fileId) {
+    const st = hostSends.get(peerId + '|' + fileId); if (st) st.paused = true;
+  }
+  async function hostPump(peerId, fileId) {
+    const key = peerId + '|' + fileId;
+    const st = hostSends.get(key); if (!st || st.sending) return;
+    const f = hostedFiles.get(fileId); const p = P(peerId);
+    if (!f || !p || !p.conn || !p.conn.open) return;
+    st.sending = true;
+    try {
+      while (!st.paused && st.offset < f.size && (st.offset - st.acked) < DL_WINDOW) {
+        const end = Math.min(st.offset + DL_CHUNK, f.size);
+        const buf = await f.slice(st.offset, end).arrayBuffer();
+        if (st.paused || !p.conn || !p.conn.open) break;
+        p.conn.send(buf);
+        st.offset = end;
+      }
+      if (st.offset >= f.size && !st.paused && p.conn && p.conn.open) p.conn.send({ type: 'dl-done', id: fileId });
+    } catch (e) { /* connection hiccup — receiver resumes with a new dl-req */ }
+    st.sending = false;
+    if (!st.paused && st.offset < f.size && (st.offset - st.acked) < DL_WINDOW && p.conn && p.conn.open) hostPump(peerId, fileId);
+  }
+
+  // --- receiver side ---
+  function onFileOffer(fromId, msg) {
+    dlOffers.set(msg.id, { name: msg.name, size: msg.size, mime: msg.mime, fromId });
+    idbMeta(msg.id).then(meta => {
+      const received = (meta && meta.received) ? Math.min(meta.received, msg.size) : 0;
+      dlState.set(msg.id, { received, seq: Math.floor(received / DL_CHUNK), active: false, paused: false, finished: received >= msg.size });
+      showDownloadCard(msg.id);
+    });
+  }
+  function dlStart(fileId) {
+    const st = dlState.get(fileId), off = dlOffers.get(fileId);
+    if (!st || !off || st.finished) return;
+    st.active = true; st.paused = false; dlActiveId = fileId; dlAckPending = 0;
+    const p = P(off.fromId);
+    if (p && p.conn && p.conn.open) p.conn.send({ type: 'dl-req', id: fileId, offset: st.received });
+    else { toast('Waiting for the host to be online…', 3000); st.active = false; }
+    updateDownloadCard(fileId);
+  }
+  function dlPause(fileId) {
+    const st = dlState.get(fileId); if (!st) return;
+    st.active = false; st.paused = true;
+    const off = dlOffers.get(fileId); const p = off && P(off.fromId);
+    if (p && p.conn && p.conn.open) p.conn.send({ type: 'dl-pause', id: fileId });
+    updateDownloadCard(fileId);
+  }
+  function onFileChunk(buf, fromId) { dlQueue.push({ buf, fromId }); dlDrain(); }
+  async function dlDrain() {
+    if (dlBusy) return; dlBusy = true;
+    while (dlQueue.length) { const it = dlQueue.shift(); await dlHandleChunk(it.buf, it.fromId); }
+    dlBusy = false;
+  }
+  async function dlHandleChunk(buf, fromId) {
+    const fileId = dlActiveId; if (!fileId) return;
+    const off = dlOffers.get(fileId); if (!off || off.fromId !== fromId) return;
+    const st = dlState.get(fileId); if (!st || st.finished) return;
+    const ab = buf instanceof ArrayBuffer ? buf : buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+    try { await idbPutChunk(fileId, st.seq, ab); }
+    catch (e) { toast('Storage full — download paused. Free space and resume.', 5000); dlPause(fileId); return; }
+    st.seq += 1;
+    st.received += ab.byteLength;
+    try { await idbPutMeta({ fileId, name: off.name, size: off.size, mime: off.mime, received: st.received }); } catch (e) {}
+    dlAckPending += ab.byteLength;
+    if (dlAckPending >= DL_ACK_EVERY || st.received >= off.size) {
+      dlAckPending = 0;
+      const p = P(off.fromId); if (p && p.conn && p.conn.open) p.conn.send({ type: 'dl-ack', id: fileId, offset: st.received });
+    }
+    updateDownloadCard(fileId);
+    if (st.received >= off.size) await dlFinish(fileId);
+  }
+  function dlOnDone(fileId) {
+    const st = dlState.get(fileId), off = dlOffers.get(fileId);
+    if (st && off && !st.finished && st.received >= off.size) dlFinish(fileId);
+  }
+  async function dlFinish(fileId) {
+    const st = dlState.get(fileId), off = dlOffers.get(fileId);
+    if (!st || !off || st.finished) return;
+    st.finished = true; st.active = false; dlActiveId = null;
+    let chunks = await idbChunks(fileId);
+    chunks.sort((a, b) => a.seq - b.seq);
+    const blob = new Blob(chunks.map(c => c.buf), { type: off.mime || 'application/octet-stream' });
+    chunks = null;
+    const url = URL.createObjectURL(blob);
+    // 1) save to device
+    const a = document.createElement('a'); a.href = url; a.download = off.name;
+    document.body.appendChild(a); a.click(); a.remove();
+    // 2) load into the synced player
+    receivingStream = false; movie.srcObject = null; movie.src = url;
+    $('btn-stream').style.display = '';
+    $('movie-hint').innerHTML = 'Downloaded &amp; saved <b>' + escapeHtml(off.name) + '</b> — loaded into the player.';
+    broadcast({ type: 'file', name: off.name });
+    updateDownloadCard(fileId);
+    toast('Download complete: ' + off.name, 4000);
+    idbClear(fileId);   // free the temporary chunks now they're assembled
+  }
+
+  // --- download card UI ---
+  function showDownloadCard(fileId) {
+    const off = dlOffers.get(fileId); if (!off) return;
+    const card = $('dl-card');
+    card.style.display = 'block';
+    card.dataset.id = fileId;
+    $('dl-name').innerHTML = '📥 <b>' + escapeHtml(off.name) + '</b> · ' + fmtBytes(off.size);
+    updateDownloadCard(fileId);
+  }
+  function updateDownloadCard(fileId) {
+    const card = $('dl-card'); if (card.dataset.id !== fileId) return;
+    const st = dlState.get(fileId), off = dlOffers.get(fileId); if (!st || !off) return;
+    const pct = off.size ? Math.min(100, (st.received / off.size) * 100) : 0;
+    $('dl-fill').style.width = pct.toFixed(1) + '%';
+    $('dl-info').textContent = fmtBytes(st.received) + ' / ' + fmtBytes(off.size) + ' (' + pct.toFixed(0) + '%)' +
+      (st.finished ? ' · done' : st.active ? ' · downloading…' : st.received > 0 ? ' · paused' : '');
+    $('dl-go').style.display = (st.finished || st.active) ? 'none' : 'inline-flex';
+    $('dl-go').textContent = st.received > 0 ? 'Resume' : 'Download';
+    $('dl-pause').style.display = st.active ? 'inline-flex' : 'none';
+  }
+  $('dl-go').onclick = () => { const id = $('dl-card').dataset.id; if (id) dlStart(id); };
+  $('dl-pause').onclick = () => { const id = $('dl-card').dataset.id; if (id) dlPause(id); };
+
   // ---------- HOST ----------
   $('btn-create').onclick = async () => {
     saveProfile();
@@ -1095,6 +1328,8 @@
       c.send({ type: 'profile', name: profile.name, emoji: profile.emoji, color: profile.color });
       const _vt = localStream && localStream.getVideoTracks()[0];
       c.send({ type: 'cam', on: _vt ? _vt.enabled : true });
+      // let the newcomer see any files we're hosting for download
+      hostedFiles.forEach((f, id) => { try { c.send({ type: 'file-offer', id, name: f.name, size: f.size, mime: f.type || 'application/octet-stream' }); } catch (e) {} });
       if (isHost) {
         enterMain();
         // tell the newcomer who else is in the room
@@ -1104,7 +1339,10 @@
       // if we're currently streaming a movie, include the newcomer
       if (streamingMovie && movieStreamMs) streamMovieTo(c.peer);
     });
-    c.on('data', m => onMessage(m, c.peer));
+    c.on('data', m => {
+      if (m instanceof ArrayBuffer || ArrayBuffer.isView(m)) onFileChunk(m, c.peer);   // download chunk
+      else onMessage(m, c.peer);
+    });
     c.on('close', () => handlePeerLeft(c.peer));
     c.on('error', () => handlePeerLeft(c.peer));
   }
@@ -1265,6 +1503,14 @@
     if (msg.type === 'reaction') { spawnReaction(msg.emoji); return; }
     if (msg.type === 'sound')    { playSound(msg.id); return; }
     if (msg.type === 'chat')     { addChatMsg(msg.emoji, msg.name, msg.text, false); return; }
+
+    // ---- host-a-file download protocol ----
+    if (msg.type === 'file-offer') { onFileOffer(fromId, msg); return; }
+    if (msg.type === 'dl-req')     { hostStartSend(fromId, msg.id, msg.offset | 0); return; }
+    if (msg.type === 'dl-ack')     { hostOnAck(fromId, msg.id, msg.offset | 0); return; }
+    if (msg.type === 'dl-pause')   { hostOnPause(fromId, msg.id); return; }
+    if (msg.type === 'dl-done')    { dlOnDone(msg.id); return; }
+    if (msg.type === 'dl-error')   { toast('Download: ' + (msg.msg || 'error'), 4000); return; }
 
     if (msg.type === 'peers') { // host told us who's here — connect to everyone
       enterMain();
