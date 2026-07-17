@@ -314,7 +314,9 @@
     gap: 12px;
     padding: 12px 18px;
     background: rgba(10,12,16,.92);
+    transition: opacity .25s ease;
   }
+  #fs-stage.controls-hidden #fs-controls { opacity: 0; pointer-events: none; }
   #fs-controls button {
     background: rgba(255,255,255,.12);
     color: #fff;
@@ -1060,26 +1062,39 @@
       call.replaceWith(callPH);
       fsSide.appendChild(call);
       fsStage.classList.add('with-partner');
-      // partner mode: a single play/pause button only
-      setDisp(fsBack, false); setDisp(fsFwd, false);
-      setDisp(fsSeek, false); setDisp(fsTime, false);
     } else {
       fsStage.classList.remove('with-partner');
-      setDisp(fsBack, true); setDisp(fsFwd, true);
-      const seekable = !receivingStream;
-      setDisp(fsSeek, seekable); setDisp(fsTime, seekable);
     }
+
+    // Both modes get the same playback controls (a single toggle handles play/pause).
+    // Seek + time only apply to a local file — a live stream has no seekable timeline.
+    setDisp(fsBack, true);
+    setDisp(fsFwd, true);
+    setDisp(fsSeek, !receivingStream);
+    setDisp(fsTime, !receivingStream);
 
     fsStage.classList.add('active');
     updateFsToggle();
     updateFsSeek();
     reqFs(fsStage);
+    showFsControls();
   }
+
+  // Show the controls, then auto-hide them after 5s of no interaction.
+  let fsHideTimer = null;
+  function showFsControls() {
+    fsStage.classList.remove('controls-hidden');
+    clearTimeout(fsHideTimer);
+    fsHideTimer = setTimeout(() => { if (fsActive) fsStage.classList.add('controls-hidden'); }, 5000);
+  }
+  // Tap/click anywhere on the stage brings the controls back (and restarts the timer).
+  fsStage.addEventListener('click', () => { if (fsActive) showFsControls(); });
 
   function teardownFs() {
     if (!fsActive) return;
     fsActive = false;
-    fsStage.classList.remove('active', 'with-partner');
+    clearTimeout(fsHideTimer);
+    fsStage.classList.remove('active', 'with-partner', 'controls-hidden');
     // put the movie back
     if (moviePH.parentNode) moviePH.replaceWith(movie);
     movie.setAttribute('controls', '');
@@ -1111,7 +1126,17 @@
     }
   }
 
-  $('btn-fs-movie').onclick   = () => enterFs('movie');
+  // Movie-only: use the device's NATIVE video fullscreen. On phones this hides the
+  // browser tab/URL bar completely and shows the native playback controls, while our
+  // play/pause/seek listeners still broadcast so everyone stays in sync.
+  function fullscreenMovie() {
+    const v = movie;
+    if (v.requestFullscreen)            { v.requestFullscreen().catch(() => enterFs('movie')); }
+    else if (v.webkitRequestFullscreen) { v.webkitRequestFullscreen(); }
+    else if (v.webkitEnterFullscreen)   { v.webkitEnterFullscreen(); }   // iPhone Safari
+    else                                { enterFs('movie'); }            // fallback: custom overlay
+  }
+  $('btn-fs-movie').onclick   = fullscreenMovie;
   $('btn-fs-partner').onclick = () => enterFs('partner');
   $('fs-exit').onclick = exitFs;
   fsToggle.onclick = fsPlayPause;
