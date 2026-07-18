@@ -1967,10 +1967,26 @@
 
     // Path A (Safari): the browser exposes the tracks natively
     if (!at || at.length < 2) {
-      $('pl-audio').style.display = (currentFile && !mp4Scanned) ? '' : 'none';
-      if (mp4Scanned && mp4Tracks.length <= 1) {
-        menu.innerHTML = '<div class="aud-head">Audio language</div><div class="aud-item">Only one audio track in this file</div>';
+      $('pl-audio').style.display = currentFile ? '' : 'none';
+      let body;
+      if (mp4State === 'scanning') {
+        body = '<div class="aud-item">Reading file… ' + mp4Pct + '%</div>';
+      } else if (mp4State === 'unsupported') {
+        body = '<div class="aud-item">Only .mp4 / .m4v / .mov files can be read here</div>' +
+               '<div class="aud-item" style="color:var(--muted)">' + escapeHtml(currentFile ? currentFile.name : '') + '</div>';
+      } else if (mp4State === 'error') {
+        body = '<div class="aud-item" data-rescan="1">Couldn\'t read the tracks — tap to retry</div>' +
+               '<div class="aud-item" style="color:var(--muted)">' + escapeHtml(mp4Err) + '</div>';
+      } else if (mp4State === 'done') {
+        const only = mp4Tracks[0];
+        body = '<div class="aud-item">This file has just one audio track' +
+               (only ? ' (' + escapeHtml(only.label || 'unknown') + ' · ' + escapeHtml(only.codec || '?') + ')' : '') + '</div>' +
+               '<div class="aud-item" data-rescan="1" style="color:var(--muted)">Scan again</div>';
+      } else {
+        body = '<div class="aud-item" data-rescan="1">Tap to scan this file for audio tracks</div>';
       }
+      menu.innerHTML = '<div class="aud-head">Audio language</div>' + body;
+      menu.querySelectorAll('[data-rescan]').forEach(el => { el.onclick = () => ensureMp4Scan(true); });
       return;
     }
     $('pl-audio').style.display = '';
@@ -1995,10 +2011,10 @@
   }
   // ---- Chrome/Android/Windows path: read the tracks out of the file itself (mp4box.js) ----
   const altAudio = $('alt-audio');
-  let mp4Tracks = [], mp4Scanned = false, extActive = false, extBusy = false;
+  let mp4Tracks = [], mp4State = 'idle', mp4Pct = 0, mp4Err = '', extActive = false, extBusy = false;
 
   function resetAltAudio() {
-    mp4Tracks = []; mp4Scanned = false; extActive = false;
+    mp4Tracks = []; mp4State = 'idle'; mp4Pct = 0; mp4Err = ''; extActive = false;
     try { altAudio.pause(); altAudio.removeAttribute('src'); altAudio.load(); } catch (e) {}
     movie.muted = false;
     refreshAudioTracks();
@@ -2013,42 +2029,57 @@
       document.head.appendChild(s);
     });
   }
-  // feed the file to mp4box in chunks; stop early once the header (moov) is parsed
-  function scanMp4Tracks(file) {
+  // The MP4 header (moov) sits at the start on "faststart" files and at the END on many others,
+  // so try the head first, then the tail, and only fall back to reading the whole file.
+  function scanMp4Tracks(file, onProgress) {
     return loadMp4Box().then(MP4Box => new Promise((resolve, reject) => {
       const mp4 = MP4Box.createFile();
       let done = false;
       mp4.onError = e => { if (!done) { done = true; reject(new Error(String(e))); } };
-      mp4.onReady = info => { done = true; resolve({ mp4, info }); };
-      const CHUNK = 4 * 1024 * 1024;
-      let offset = 0;
-      const pump = () => {
-        if (done) return;
-        if (offset >= file.size) { if (!done) reject(new Error('No track info found in this file')); return; }
-        file.slice(offset, Math.min(offset + CHUNK, file.size)).arrayBuffer().then(buf => {
+      mp4.onReady = info => { if (!done) { done = true; resolve({ mp4, info }); } };
+
+      const CHUNK = 2 * 1024 * 1024;
+      const appendRange = async (start, end) => {
+        for (let off = start; off < end && !done; off += CHUNK) {
+          const stop = Math.min(off + CHUNK, end);
+          const buf = await file.slice(off, stop).arrayBuffer();
           if (done) return;
-          buf.fileStart = offset;
-          try { mp4.appendBuffer(buf); } catch (e) { reject(e); return; }
-          offset += CHUNK;
-          pump();
-        }).catch(reject);
+          buf.fileStart = off;
+          mp4.appendBuffer(buf);
+          if (onProgress) onProgress(Math.min(99, Math.round((stop / file.size) * 100)));
+          await new Promise(r => setTimeout(r, 0));   // keep the UI responsive
+        }
       };
-      pump();
+
+      (async () => {
+        try {
+          await appendRange(0, Math.min(4 * 1024 * 1024, file.size));            // 1. header at the start
+          if (done) return;
+          const tail = Math.max(0, file.size - 64 * 1024 * 1024);
+          if (tail > 0) { await appendRange(tail, file.size); if (done) return; } // 2. header at the end
+          await appendRange(0, file.size);                                        // 3. last resort
+          if (!done) { done = true; reject(new Error('No track information found')); }
+        } catch (e) { if (!done) { done = true; reject(e); } }
+      })();
     }));
   }
   const PLAYABLE = /mp4a|opus|vorbis|flac|mp3/i;   // what browsers can actually decode
-  async function ensureMp4Scan() {
-    if (mp4Scanned || !currentFile) return;
-    mp4Scanned = true;
-    if (!/\.(mp4|m4v|mov)$/i.test(currentFile.name)) return;   // mp4box only understands MP4
+  async function ensureMp4Scan(force) {
+    if (!currentFile || mp4State === 'scanning') return;
+    if (mp4State === 'done' && !force) return;
+    if (!/\.(mp4|m4v|mov)$/i.test(currentFile.name)) { mp4State = 'unsupported'; refreshAudioTracks(); return; }
+    mp4State = 'scanning'; mp4Pct = 0; mp4Err = '';
+    refreshAudioTracks();
     try {
-      const { info } = await scanMp4Tracks(currentFile);
+      const { info } = await scanMp4Tracks(currentFile, p => { mp4Pct = p; refreshAudioTracks(); });
       mp4Tracks = (info.audioTracks || []).map(t => ({
         id: t.id, lang: t.language, codec: t.codec,
         label: langName(t.language) || ('Track ' + t.id),
         playable: PLAYABLE.test(t.codec || '')
       }));
-    } catch (e) { mp4Tracks = []; }
+      mp4State = 'done';
+    } catch (e) { mp4Err = (e && e.message) || String(e); mp4State = 'error'; }
+    refreshAudioTracks();
   }
   // extract one audio track into a playable blob and run it in sync with the muted video
   async function useExtractedTrack(idx) {
@@ -2127,9 +2158,9 @@
     e.stopPropagation();
     const menu = $('audio-menu');
     if (menu.classList.contains('open')) { menu.classList.remove('open'); return; }
-    if (!(movie.audioTracks && movie.audioTracks.length > 1)) { await ensureMp4Scan(); }
     refreshAudioTracks();
     menu.classList.add('open');
+    if (!(movie.audioTracks && movie.audioTracks.length > 1)) ensureMp4Scan();   // scan with the menu open
   };
   movie.addEventListener('loadedmetadata', () => setTimeout(refreshAudioTracks, 300));
   if (movie.audioTracks && movie.audioTracks.addEventListener) {
