@@ -2094,6 +2094,7 @@
       extActive = true;
       if (!movie.paused) altAudio.play().catch(() => {});
       try { localStorage.setItem('wt_audio_lang', (info.lang || '').toLowerCase().split('-')[0]); } catch (e) {}
+      if (streamingMovie) restartStreaming();   // viewers should hear the new language too
       toast('Audio: ' + info.label, 2500);
     } catch (e) {
       toast('Could not switch audio: ' + e.message, 5000);
@@ -2105,6 +2106,7 @@
     extActive = false;
     try { altAudio.pause(); altAudio.removeAttribute('src'); altAudio.load(); } catch (e) {}
     movie.muted = false;
+    if (streamingMovie) restartStreaming();
     refreshAudioTracks();
   }
   // keep the extracted audio locked to the video
@@ -2325,8 +2327,23 @@
 
   // ---------- MOVIE CAPTURE (with iPhone/Safari fallback) ----------
   function captureMovieStream() {
-    if (movie.captureStream) return movie.captureStream();
-    if (movie.mozCaptureStream) return movie.mozCaptureStream();
+    let base = null;
+    if (movie.captureStream) base = movie.captureStream();
+    else if (movie.mozCaptureStream) base = movie.mozCaptureStream();
+    // if we're playing an extracted language track, send THAT audio, not the file's muted default
+    if (base && extActive && altAudio) {
+      try {
+        const aStream = altAudio.captureStream ? altAudio.captureStream()
+                      : (altAudio.mozCaptureStream ? altAudio.mozCaptureStream() : null);
+        if (aStream && aStream.getAudioTracks().length) {
+          const combined = new MediaStream();
+          base.getVideoTracks().forEach(t => combined.addTrack(t));
+          aStream.getAudioTracks().forEach(t => combined.addTrack(t));
+          return combined;
+        }
+      } catch (e) { /* fall back to the plain capture */ }
+    }
+    if (base) return base;
     // Canvas fallback for iOS Safari: draw video frames to a canvas and capture that.
     const canvas = document.createElement('canvas');
     const w = movie.videoWidth || 640, h = movie.videoHeight || 360;
