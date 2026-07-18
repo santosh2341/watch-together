@@ -314,14 +314,26 @@
     #pl-time { font-size: 11px; }
     #pl-center { width: 68px; height: 68px; }
   }
-  #yt-wrap { display: none; width: 100%; background: #000; border-radius: 10px; aspect-ratio: 16/9; max-height: 42vh; }
+  #yt-stage { display: none; position: relative; width: 100%; }
+  body.yt #yt-stage { display: flex; }
+  #yt-wrap { flex: 1; min-width: 0; background: #000; border-radius: 10px; aspect-ratio: 16/9; max-height: 42vh; }
   #yt-wrap iframe, #yt-player { width: 100%; height: 100%; border: 0; border-radius: 10px; }
-  #yt-wrap:fullscreen { border-radius: 0; }
+  #yt-side { display: none; }
+  #yt-side #call-area { display: flex; flex-direction: column; gap: 8px; padding: 0; background: transparent; overflow: visible; }
+  #yt-side .cam-wrap { width: 100%; }
+  #yt-exit { display: none; }
+  #yt-stage:fullscreen { background: #000; }
+  #yt-stage:fullscreen #yt-wrap { max-height: none; height: 100%; aspect-ratio: auto; border-radius: 0; }
+  #yt-stage:fullscreen #yt-side { display: flex; flex-direction: column; gap: 8px; width: 300px; flex: none;
+    padding: 8px; overflow-y: auto; background: #0b0d11; }
+  #yt-stage:fullscreen #yt-exit { display: inline-flex; position: absolute; top: 12px; right: 12px; z-index: 5;
+    background: rgba(0,0,0,.65); color: #fff; border: none; border-radius: 10px; padding: 8px 14px; cursor: pointer; }
+  @media (pointer: coarse) { #yt-stage:fullscreen #yt-side { width: 22vw; max-width: 130px; } }
   body.yt #player { display: none; }
-  body.yt #yt-wrap { display: block; }
   #yt-row { display: flex; gap: 8px; }
   #yt-url { flex: 1; min-width: 0; background: var(--bg); border: 1px solid #2a3040; border-radius: 10px; padding: 10px; color: var(--text); font-size: 14px; }
   #yt-row .btn { max-width: 130px; padding: 10px 14px; font-size: 14px; margin: 0; }
+  body.audio-mode #yt-stage { flex: none; }
   body.audio-mode #yt-wrap { flex: none; width: 220px; max-width: 100%; height: auto; aspect-ratio: 16/9; max-height: none; }
   #mix-row { display: flex; gap: 16px; padding: 8px 12px; background: var(--card); flex-wrap: wrap; align-items: center; }
   #mix-row .mix { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); flex: 1; min-width: 170px; }
@@ -402,7 +414,8 @@
     #player-area { grid-column: 1; grid-row: 1; min-height: 0; }
     #player { max-height: none; flex: 1; min-height: 0; }
     #player video { max-height: none; height: 100%; }
-    #yt-wrap { max-height: none; flex: 1; height: 100%; min-height: 0; aspect-ratio: auto; }
+    #yt-stage { max-height: none; flex: 1; min-height: 0; }
+    #yt-wrap { max-height: none; height: 100%; aspect-ratio: auto; }
     #call-area {
       grid-column: 2; grid-row: 1;
       grid-template-columns: 1fr;   /* one wide tile per row, filling the side panel */
@@ -705,7 +718,11 @@
       </div>
       <div id="eps-panel"></div>
     </div>
-    <div id="yt-wrap"><div id="yt-player"></div></div>
+    <div id="yt-stage">
+      <div id="yt-wrap"><div id="yt-player"></div></div>
+      <div id="yt-side"></div>
+      <button id="yt-exit" title="Exit full screen">✕ Exit</button>
+    </div>
     <div id="remote-controls">
       <button id="rc-back" title="Back 10 seconds"><svg class="ic solid" viewBox="0 0 24 24"><polygon points="11 19 2 12 11 5 11 19"/><polygon points="22 19 13 12 22 5 22 19"/></svg> 10s</button>
       <button id="rc-play" title="Play"><svg class="ic solid" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg> Play</button>
@@ -1450,6 +1467,7 @@
       c.send({ type: 'cam', on: _vt ? _vt.enabled : true });
       // let the newcomer see any files we're hosting for download
       hostedFiles.forEach((f, id) => { try { c.send({ type: 'file-offer', id, name: f.name, size: f.size, mime: f.type || 'application/octet-stream' }); } catch (e) {} });
+      if (seriesMode && episodes.length) { try { c.send({ type: 'eplist', names: episodes.map(ep => ep.name) }); } catch (e) {} }
       if (isHost) {
         enterMain();
         // tell the newcomer who else is in the room
@@ -1638,6 +1656,7 @@
     if (msg.type === 'yt-load') { ytRemoteLoad(msg.vid, msg.t || 0); return; }
     if (msg.type === 'yt')      { ytRemote(msg); return; }
     if (msg.type === 'ep')      { onRemoteEp(msg); return; }   // series: switch episode together
+    if (msg.type === 'eplist')  { onRemoteEpList(msg.names); return; }
 
     if (msg.type === 'peers') { // host told us who's here — connect to everyone
       enterMain();
@@ -1743,7 +1762,7 @@
     movie.src = URL.createObjectURL(f);
     resumeKey = 'file:' + f.name + '_' + f.size;   // remember position for this file
     seriesMode = false; episodes = []; epIndex = -1;
-    $('pl-next').style.display = 'none'; $('pl-eps').style.display = 'none';
+    $('pl-next').style.display = 'none'; showEpsButton();
     $('eps-panel').classList.remove('open');
     $('pl-title').textContent = f.name;
     $('movie-hint').innerHTML = 'Loaded: <b>' + escapeHtml(f.name) + '</b> — press play (or Stream to room if others don\'t have the file).';
@@ -1760,6 +1779,7 @@
     vol:   '<svg class="pl-ic" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg>',
     mute:  '<svg class="pl-ic" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M22 9l-6 6M16 9l6 6"/></svg>',
     fs:    '<svg class="pl-ic" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg>',
+    fsExit:'<svg class="pl-ic" viewBox="0 0 24 24"><path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/></svg>',
     next:  '<svg class="pl-ic solid" viewBox="0 0 24 24"><polygon points="5 4 15 12 5 20 5 4"/><rect x="17" y="4" width="3" height="16"/></svg>',
     list:  '<svg class="pl-ic" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>'
   };
@@ -1787,12 +1807,14 @@
 
   function plUpdate() {
     const d = movie.duration, t = movie.currentTime || 0;
-    if (isFinite(d) && d > 0) {
+    const live = receivingStream || !isFinite(d) || !(d > 0);   // a live stream has no timeline
+    $('pl-seek').style.display = live ? 'none' : '';
+    if (!live) {
       const pct = Math.max(0, Math.min(100, (t / d) * 100));
       $('pl-seek').value = Math.round(pct * 10);
       $('pl-seek').style.setProperty('--seek-fill', pct.toFixed(2) + '%');
       $('pl-time').textContent = fmtTime(t) + ' / ' + fmtTime(d);
-    } else { $('pl-time').textContent = fmtTime(t); }
+    } else { $('pl-time').textContent = fmtTime(t) + (receivingStream ? ' · live' : ''); }
     const playing = !movie.paused;
     $('pl-play').innerHTML = playing ? PL.pause : PL.play;
     $('pl-center').innerHTML = PL.play;
@@ -1811,7 +1833,11 @@
   $('pl-center').onclick = plToggle;
   $('pl-back').onclick   = () => plSkip(-1);
   $('pl-fwd').onclick    = () => plSkip(1);
-  $('pl-fs').onclick     = () => fullscreenMovie();
+  function plSyncFsIcon() { $('pl-fs').innerHTML = (fsElement() || fsActive) ? PL.fsExit : PL.fs; }
+  $('pl-fs').onclick     = () => {                    // toggles: enter, or exit if already full screen
+    if (fsElement() || fsActive) exitFs(); else fullscreenMovie();
+    setTimeout(plSyncFsIcon, 100);
+  };
   $('pl-seek').oninput   = function () {
     this.style.setProperty('--seek-fill', (this.value / 10) + '%');   // live fill while dragging
     if (receivingStream || !isFinite(movie.duration)) return;
@@ -1835,18 +1861,21 @@
   movie.addEventListener('durationchange', plUpdate);
 
   // ---- series mode ----
-  let episodes = [], epIndex = -1, seriesMode = false;
+  let episodes = [], epIndex = -1, seriesMode = false, remoteEpNames = [];
 
   function readResumeInfo(key) {
     try { const m = JSON.parse(localStorage.getItem('wt_resume') || '{}'); return m[key] || {}; } catch (e) { return {}; }
   }
   function renderEps() {
-    if (!seriesMode) return;
-    const rows = episodes.map((ep, i) => {
-      const info = readResumeInfo(ep.key);
-      const dur = ep.dur || info.dur || 0;
+    const useLocal = seriesMode && episodes.length > 0;
+    const list = useLocal ? episodes : remoteEpNames.map(n => ({ name: n, key: null }));
+    if (!list.length) return;
+    const rows = list.map((ep, i) => {
+      const info = ep.key ? readResumeInfo(ep.key) : {};
+      const dur = (ep.dur || info.dur || 0);
       let meta, pct = 0;
-      if (info.done)              { meta = '✓ Watched'; pct = 100; }
+      if (!useLocal)              { meta = 'Tap to play together'; }
+      else if (info.done)         { meta = '✓ Watched'; pct = 100; }
       else if (info.t > 0 && dur) { meta = fmtTime(Math.max(0, dur - info.t)) + ' left'; pct = (info.t / dur) * 100; }
       else if (info.t > 0)        { meta = 'In progress'; }
       else                        { meta = dur ? fmtTime(dur) : 'Not watched'; }
@@ -1857,11 +1886,22 @@
              '<div class="ep-bar"><div class="ep-fill" style="width:' + pct.toFixed(0) + '%"></div></div>' +
              '</div></div>';
     }).join('');
-    $('eps-panel').innerHTML = '<div class="eps-head"><span>Episodes (' + episodes.length + ')</span><button id="eps-x">✕</button></div>' + rows;
+    $('eps-panel').innerHTML = '<div class="eps-head"><span>Episodes (' + list.length + ')</span><button id="eps-x">✕</button></div>' + rows;
     $('eps-x').onclick = () => $('eps-panel').classList.remove('open');
     $('eps-panel').querySelectorAll('.ep').forEach(el => {
-      el.onclick = () => { loadEpisode(parseInt(el.dataset.ep, 10), true, true); $('eps-panel').classList.remove('open'); };
+      el.onclick = () => {
+        const i = parseInt(el.dataset.ep, 10);
+        if (useLocal) loadEpisode(i, true, true);
+        else { broadcast({ type: 'ep', idx: i, name: list[i].name }); epIndex = i; toast('Asked to play episode ' + (i + 1), 2500); renderEps(); }
+        $('eps-panel').classList.remove('open');
+      };
     });
+  }
+  function showEpsButton() { $('pl-eps').style.display = (seriesMode || remoteEpNames.length) ? '' : 'none'; }
+  function onRemoteEpList(names) {          // partner shared their episode list
+    remoteEpNames = Array.isArray(names) ? names : [];
+    showEpsButton();
+    if (!seriesMode) renderEps();
   }
   function loadEpisode(i, doBroadcast, autoplay) {
     if (i < 0 || i >= episodes.length) return;
@@ -1913,7 +1953,8 @@
     files.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
     episodes = files.map(f => ({ file: f, name: f.name, key: 'file:' + f.name + '_' + f.size, dur: 0 }));
     seriesMode = true;
-    $('pl-next').style.display = ''; $('pl-eps').style.display = '';
+    $('pl-next').style.display = ''; showEpsButton();
+    broadcast({ type: 'eplist', names: episodes.map(ep => ep.name) });   // let the partner see the list
     let start = episodes.findIndex(ep => !readResumeInfo(ep.key).done);
     if (start < 0) start = 0;
     loadEpisode(start, true, false);
@@ -2046,7 +2087,20 @@
     setTimeout(capMovieBitrateAll, 1500);
   }
 
+  const STREAM_ICON = '<svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49M7.76 16.24a6 6 0 0 1 0-8.49M19.07 4.93a10 10 0 0 1 0 14.14M4.93 19.07a10 10 0 0 1 0-14.14"/></svg>';
+  function setStreamBtn(on) {
+    $('btn-stream').innerHTML = STREAM_ICON + (on ? ' Stop streaming' : ' Stream to room');
+    $('btn-stream').classList.toggle('off', on);
+  }
+  function stopStreaming() {
+    streamingMovie = false;
+    peers.forEach(p => { try { if (p.movieOut) p.movieOut.close(); } catch (e) {} p.movieOut = null; });
+    if (movieStreamMs) { try { movieStreamMs.getTracks().forEach(t => t.stop()); } catch (e) {} movieStreamMs = null; }
+    setStreamBtn(false);
+    toast('Stopped streaming', 2500);
+  }
   $('btn-stream').onclick = () => {
+    if (streamingMovie) { stopStreaming(); return; }      // toggle off
     if (!movie.src) { toast('Choose a video file first'); return; }
     if (peers.size === 0) { toast('No one else is in the room yet'); return; }
     try {
@@ -2054,6 +2108,7 @@
       streamingMovie = true;
       peers.forEach((p, id) => streamMovieTo(id));
       tryPlay();
+      setStreamBtn(true);
       toast('Streaming your video to the room', 4000);
       if (peers.size > 3) toast('Streaming to many people uses a lot of data — Low data mode recommended', 5000);
     } catch (e) { toast('Could not stream: ' + e.message, 4000); }
@@ -2355,10 +2410,42 @@
   // browser tab/URL bar completely and shows the native playback controls, while our
   // play/pause/seek listeners still broadcast so everyone stays in sync.
   function ytFullscreen() {
-    const el = $('yt-wrap');
+    const el = $('yt-stage');
     const fn = el.requestFullscreen || el.webkitRequestFullscreen;
     if (fn) { try { const r = fn.call(el); if (r && r.catch) r.catch(() => {}); } catch (e) {} }
   }
+  // YouTube + partner: fullscreen the wrapper that already holds the iframe and move the
+  // call tiles inside it — the iframe is never re-parented, so the video doesn't reload.
+  let ytFsPartner = false;
+  const ytCallPH = document.createComment('yt-call-home');
+  function ytFullscreenPartner() {
+    const stage = $('yt-stage'), call = $('call-area');
+    if (!ytFsPartner) {
+      call.replaceWith(ytCallPH);
+      $('yt-side').appendChild(call);
+      stage.appendChild($('reaction-layer'));
+      stage.appendChild($('chat-overlay'));
+      stage.appendChild($('chat-panel'));
+      stage.appendChild($('react-pop'));
+      stage.appendChild($('sound-pop'));
+      ytFsPartner = true;
+    }
+    ytFullscreen();
+  }
+  function ytFsPartnerExit() {
+    if (!ytFsPartner) return;
+    ytFsPartner = false;
+    if (ytCallPH.parentNode) ytCallPH.replaceWith($('call-area'));
+    document.body.appendChild($('reaction-layer'));
+    document.body.appendChild($('chat-overlay'));
+    document.body.appendChild($('chat-panel'));
+    document.body.appendChild($('react-pop'));
+    document.body.appendChild($('sound-pop'));
+  }
+  $('yt-exit').onclick = () => {
+    const fn = document.exitFullscreen || document.webkitExitFullscreen;
+    if (fn) { try { fn.call(document); } catch (e) {} }
+  };
   function fullscreenMovie() {
     if (ytActive) { ytFullscreen(); return; }
     const el = $('player');   // fullscreen the player so our own controls come along
@@ -2368,7 +2455,7 @@
   }
   $('btn-fs-movie').onclick   = fullscreenMovie;
   $('btn-fs-partner').onclick = () => {
-    if (ytActive) { toast('Partner panel isn\'t available in YouTube full screen yet — opening full screen', 4000); ytFullscreen(); return; }
+    if (ytActive) { ytFullscreenPartner(); return; }
     enterFs('partner');
   };
   $('fs-exit').onclick = exitFs;
@@ -2385,8 +2472,12 @@
   movie.addEventListener('timeupdate', updateFsSeek);
   movie.addEventListener('loadedmetadata', updateFsSeek);
 
-  document.addEventListener('fullscreenchange', () => { if (!fsElement() && fsActive) teardownFs(); });
-  document.addEventListener('webkitfullscreenchange', () => { if (!fsElement() && fsActive) teardownFs(); });
+  function onFsChange() {
+    if (!fsElement()) { if (fsActive) teardownFs(); if (ytFsPartner) ytFsPartnerExit(); }
+    plSyncFsIcon();
+  }
+  document.addEventListener('fullscreenchange', onFsChange);
+  document.addEventListener('webkitfullscreenchange', onFsChange);
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && fsActive && !fsElement()) exitFs(); });
 
   // ---------- END SESSION ----------
