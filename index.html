@@ -244,16 +244,58 @@
   }
 
   #player-area { flex: 1; padding: 10px; display: flex; flex-direction: column; gap: 10px; }
-  #movie {
-    width: 100%;
-    background: #000;
-    border-radius: 10px;
-    max-height: 42vh;
-  }
+  /* ---- Netflix-style player ---- */
+  #player { position: relative; width: 100%; background: #000; border-radius: 10px; overflow: hidden; max-height: 42vh; }
+  #player video { width: 100%; max-height: 42vh; display: block; object-fit: contain; background: #000; }
+  #player:fullscreen { max-height: none; height: 100%; border-radius: 0; }
+  #player:fullscreen video { max-height: none; height: 100%; }
+  #fs-main #player { width: 100%; height: 100%; max-height: none; border-radius: 0; }
+  #fs-main #player video { max-height: none; height: 100%; }
+
+  #pl-ui { position: absolute; inset: 0; opacity: 0; transition: opacity .25s ease; pointer-events: none; }
+  #player.show-ui #pl-ui { opacity: 1; pointer-events: auto; }
+  #pl-top { position: absolute; top: 0; left: 0; right: 0; padding: 12px 16px;
+            background: linear-gradient(to bottom, rgba(0,0,0,.8), transparent); font-size: 14px; font-weight: 600;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #pl-center { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+               width: 62px; height: 62px; border-radius: 50%; background: rgba(0,0,0,.55);
+               border: none; color: #fff; cursor: pointer; display: none; align-items: center; justify-content: center; }
+  #pl-center:hover { background: rgba(0,0,0,.75); }
+  #pl-bar { position: absolute; left: 0; right: 0; bottom: 0; padding: 8px 14px 10px;
+            background: linear-gradient(to top, rgba(0,0,0,.9), rgba(0,0,0,.35) 60%, transparent); }
+  #pl-seek { width: 100%; height: 4px; accent-color: #e50914; cursor: pointer; }
+  #pl-row { display: flex; align-items: center; gap: 10px; margin-top: 4px; flex-wrap: nowrap; overflow-x: auto; }
+  .pl-btn { background: none; border: none; color: #fff; cursor: pointer; padding: 4px;
+            display: inline-flex; align-items: center; gap: 6px; font-size: 12px; flex: none; }
+  .pl-btn:hover { color: #e50914; }
+  .pl-ic { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .pl-ic.solid { fill: currentColor; stroke: none; }
+  #pl-center .pl-ic { width: 28px; height: 28px; }
+  .pl-spacer { flex: 1; }
+  #pl-time { font-size: 12px; color: #ddd; font-variant-numeric: tabular-nums; white-space: nowrap; flex: none; }
+  #pl-vol-wrap { display: flex; align-items: center; gap: 6px; flex: none; }
+  #pl-vol { width: 68px; accent-color: #fff; }
+
+  /* episodes panel */
+  #eps-panel { position: absolute; top: 0; right: 0; bottom: 0; width: 320px; max-width: 85%;
+               background: rgba(10,10,12,.97); overflow-y: auto; padding: 12px;
+               transform: translateX(100%); transition: transform .25s ease; z-index: 3; }
+  #eps-panel.open { transform: none; }
+  .eps-head { font-size: 14px; font-weight: 700; margin: 4px 6px 10px; display: flex; justify-content: space-between; align-items: center; }
+  .eps-head button { background: none; border: none; color: var(--muted); font-size: 16px; cursor: pointer; }
+  .ep { display: flex; gap: 10px; align-items: flex-start; padding: 9px 8px; border-radius: 8px; cursor: pointer; }
+  .ep:hover { background: #1f1f22; }
+  .ep.current { background: #2a2a2e; }
+  .ep-num { width: 22px; text-align: center; color: #aaa; font-weight: 700; font-size: 13px; padding-top: 1px; }
+  .ep-info { flex: 1; min-width: 0; }
+  .ep-name { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ep-meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .ep-bar { height: 3px; background: #3a3a3d; border-radius: 2px; margin-top: 5px; overflow: hidden; }
+  .ep-fill { height: 100%; background: #e50914; width: 0%; }
   #yt-wrap { display: none; width: 100%; background: #000; border-radius: 10px; aspect-ratio: 16/9; max-height: 42vh; }
   #yt-wrap iframe, #yt-player { width: 100%; height: 100%; border: 0; border-radius: 10px; }
   #yt-wrap:fullscreen { border-radius: 0; }
-  body.yt #movie { display: none; }
+  body.yt #player { display: none; }
   body.yt #yt-wrap { display: block; }
   #yt-row { display: flex; gap: 8px; }
   #yt-url { flex: 1; min-width: 0; background: var(--bg); border: 1px solid #2a3040; border-radius: 10px; padding: 10px; color: var(--text); font-size: 14px; }
@@ -336,7 +378,8 @@
       gap: 0;
     }
     #player-area { grid-column: 1; grid-row: 1; min-height: 0; }
-    #movie { max-height: none; flex: 1; height: 100%; min-height: 0; object-fit: contain; }
+    #player { max-height: none; flex: 1; min-height: 0; }
+    #player video { max-height: none; height: 100%; }
     #yt-wrap { max-height: none; flex: 1; height: 100%; min-height: 0; aspect-ratio: auto; }
     #call-area {
       grid-column: 2; grid-row: 1;
@@ -615,7 +658,31 @@
   </div>
 
   <div id="player-area">
-    <video id="movie" controls playsinline></video>
+    <div id="player">
+      <video id="movie" playsinline></video>
+      <div id="pl-ui">
+        <div id="pl-top"><span id="pl-title"></span></div>
+        <button id="pl-center" title="Play"></button>
+        <div id="pl-bar">
+          <input type="range" id="pl-seek" min="0" max="1000" value="0">
+          <div id="pl-row">
+            <button id="pl-play" class="pl-btn" title="Play / Pause"></button>
+            <button id="pl-back" class="pl-btn" title="Back 10s"></button>
+            <button id="pl-fwd" class="pl-btn" title="Forward 10s"></button>
+            <div id="pl-vol-wrap">
+              <button id="pl-mute" class="pl-btn" title="Mute"></button>
+              <input type="range" id="pl-vol" min="0" max="100" value="100">
+            </div>
+            <span id="pl-time">0:00 / 0:00</span>
+            <span class="pl-spacer"></span>
+            <button id="pl-next" class="pl-btn" title="Next episode" style="display:none"></button>
+            <button id="pl-eps" class="pl-btn" title="Episodes" style="display:none"></button>
+            <button id="pl-fs" class="pl-btn" title="Full screen"></button>
+          </div>
+        </div>
+      </div>
+      <div id="eps-panel"></div>
+    </div>
     <div id="yt-wrap"><div id="yt-player"></div></div>
     <div id="remote-controls">
       <button id="rc-back" title="Back 10 seconds"><svg class="ic solid" viewBox="0 0 24 24"><polygon points="11 19 2 12 11 5 11 19"/><polygon points="22 19 13 12 22 5 22 19"/></svg> 10s</button>
@@ -626,8 +693,10 @@
     <div id="file-row">
       <button class="btn secondary" id="btn-file"><svg class="ic" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg> Choose video file</button>
       <button class="btn secondary" id="btn-stream" style="display:none"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49M7.76 16.24a6 6 0 0 1 0-8.49M19.07 4.93a10 10 0 0 1 0 14.14M4.93 19.07a10 10 0 0 1 0-14.14"/></svg> Stream to room</button>
+      <button class="btn secondary" id="btn-folder"><svg class="ic" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><path d="M8 13h8M8 17h5"/></svg> Choose folder (series)</button>
       <button class="btn secondary" id="btn-host-file"><svg class="ic" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg> Host a file</button>
       <input type="file" id="file-input" accept="video/*" hidden>
+      <input type="file" id="folder-input" webkitdirectory directory multiple hidden>
       <input type="file" id="host-file-input" accept="video/*,audio/*" hidden>
     </div>
     <div id="yt-row">
@@ -1546,6 +1615,7 @@
     // ---- YouTube watch-together ----
     if (msg.type === 'yt-load') { ytRemoteLoad(msg.vid, msg.t || 0); return; }
     if (msg.type === 'yt')      { ytRemote(msg); return; }
+    if (msg.type === 'ep')      { onRemoteEp(msg); return; }   // series: switch episode together
 
     if (msg.type === 'peers') { // host told us who's here — connect to everyone
       enterMain();
@@ -1650,10 +1720,185 @@
     $('remote-controls').style.display = 'none';
     movie.src = URL.createObjectURL(f);
     resumeKey = 'file:' + f.name + '_' + f.size;   // remember position for this file
+    seriesMode = false; episodes = []; epIndex = -1;
+    $('pl-next').style.display = 'none'; $('pl-eps').style.display = 'none';
+    $('eps-panel').classList.remove('open');
+    $('pl-title').textContent = f.name;
     $('movie-hint').innerHTML = 'Loaded: <b>' + escapeHtml(f.name) + '</b> — press play (or Stream to room if others don\'t have the file).';
     $('btn-stream').style.display = '';
     broadcast({ type: 'file', name: f.name });
   };
+
+  // ---------- NETFLIX-STYLE PLAYER + SERIES MODE ----------
+  const PL = {
+    play:  '<svg class="pl-ic solid" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>',
+    pause: '<svg class="pl-ic solid" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>',
+    back:  '<svg class="pl-ic" viewBox="0 0 24 24"><path d="M11 5 4 12l7 7"/><path d="M4 12h9a7 7 0 1 1 0 14h-1"/></svg>',
+    fwd:   '<svg class="pl-ic" viewBox="0 0 24 24"><path d="M13 5l7 7-7 7"/><path d="M20 12h-9a7 7 0 1 0 0 14h1"/></svg>',
+    vol:   '<svg class="pl-ic" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg>',
+    mute:  '<svg class="pl-ic" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M22 9l-6 6M16 9l6 6"/></svg>',
+    fs:    '<svg class="pl-ic" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg>',
+    next:  '<svg class="pl-ic solid" viewBox="0 0 24 24"><polygon points="5 4 15 12 5 20 5 4"/><rect x="17" y="4" width="3" height="16"/></svg>',
+    list:  '<svg class="pl-ic" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>'
+  };
+  const plEl = $('player');
+  $('pl-play').innerHTML  = PL.play;
+  $('pl-back').innerHTML  = PL.back;
+  $('pl-fwd').innerHTML   = PL.fwd;
+  $('pl-mute').innerHTML  = PL.vol;
+  $('pl-fs').innerHTML    = PL.fs;
+  $('pl-next').innerHTML  = PL.next + ' Next';
+  $('pl-eps').innerHTML   = PL.list + ' Episodes';
+  $('pl-center').innerHTML = PL.play;
+
+  let plHideTimer = null;
+  function plShowUI() {
+    plEl.classList.add('show-ui');
+    clearTimeout(plHideTimer);
+    plHideTimer = setTimeout(() => { if (!movie.paused) plEl.classList.remove('show-ui'); }, 3000);
+  }
+  plEl.addEventListener('mousemove', plShowUI);
+  plEl.addEventListener('pointerdown', plShowUI);
+
+  function plUpdate() {
+    const d = movie.duration, t = movie.currentTime || 0;
+    if (isFinite(d) && d > 0) {
+      $('pl-seek').value = Math.round((t / d) * 1000);
+      $('pl-time').textContent = fmtTime(t) + ' / ' + fmtTime(d);
+    } else { $('pl-time').textContent = fmtTime(t); }
+    const playing = !movie.paused;
+    $('pl-play').innerHTML = playing ? PL.pause : PL.play;
+    $('pl-center').innerHTML = PL.play;
+    $('pl-center').style.display = playing ? 'none' : 'flex';
+    if (!playing) plEl.classList.add('show-ui');
+  }
+  function plToggle() {
+    if (receivingStream) { broadcast({ type: 'ctrl', action: movie.paused ? 'play' : 'pause' }); return; }
+    if (movie.paused) tryPlay(); else movie.pause();
+  }
+  function plSkip(dir) {
+    if (receivingStream) { broadcast({ type: 'ctrl', action: dir > 0 ? 'fwd' : 'back' }); return; }
+    movie.currentTime = Math.max(0, Math.min(movie.duration || Infinity, (movie.currentTime || 0) + dir * 10));
+  }
+  $('pl-play').onclick   = plToggle;
+  $('pl-center').onclick = plToggle;
+  $('pl-back').onclick   = () => plSkip(-1);
+  $('pl-fwd').onclick    = () => plSkip(1);
+  $('pl-fs').onclick     = () => fullscreenMovie();
+  $('pl-seek').oninput   = function () {
+    if (receivingStream || !isFinite(movie.duration)) return;
+    movie.currentTime = (this.value / 1000) * movie.duration;
+  };
+  $('pl-vol').oninput = function () {
+    mediaVol = this.value / 100;
+    movie.muted = false;
+    applyMediaVol();
+    $('vol-media').value = this.value;
+    $('pl-mute').innerHTML = mediaVol === 0 ? PL.mute : PL.vol;
+  };
+  $('pl-mute').onclick = function () {
+    movie.muted = !movie.muted;
+    this.innerHTML = movie.muted ? PL.mute : PL.vol;
+  };
+  movie.addEventListener('timeupdate', plUpdate);
+  movie.addEventListener('play', plUpdate);
+  movie.addEventListener('pause', plUpdate);
+  movie.addEventListener('loadedmetadata', plUpdate);
+  movie.addEventListener('durationchange', plUpdate);
+
+  // ---- series mode ----
+  let episodes = [], epIndex = -1, seriesMode = false;
+
+  function readResumeInfo(key) {
+    try { const m = JSON.parse(localStorage.getItem('wt_resume') || '{}'); return m[key] || {}; } catch (e) { return {}; }
+  }
+  function renderEps() {
+    if (!seriesMode) return;
+    const rows = episodes.map((ep, i) => {
+      const info = readResumeInfo(ep.key);
+      const dur = ep.dur || info.dur || 0;
+      let meta, pct = 0;
+      if (info.done)              { meta = '✓ Watched'; pct = 100; }
+      else if (info.t > 0 && dur) { meta = fmtTime(Math.max(0, dur - info.t)) + ' left'; pct = (info.t / dur) * 100; }
+      else if (info.t > 0)        { meta = 'In progress'; }
+      else                        { meta = dur ? fmtTime(dur) : 'Not watched'; }
+      return '<div class="ep' + (i === epIndex ? ' current' : '') + '" data-ep="' + i + '">' +
+             '<div class="ep-num">' + (i + 1) + '</div><div class="ep-info">' +
+             '<div class="ep-name">' + escapeHtml(ep.name) + '</div>' +
+             '<div class="ep-meta">' + meta + '</div>' +
+             '<div class="ep-bar"><div class="ep-fill" style="width:' + pct.toFixed(0) + '%"></div></div>' +
+             '</div></div>';
+    }).join('');
+    $('eps-panel').innerHTML = '<div class="eps-head"><span>Episodes (' + episodes.length + ')</span><button id="eps-x">✕</button></div>' + rows;
+    $('eps-x').onclick = () => $('eps-panel').classList.remove('open');
+    $('eps-panel').querySelectorAll('.ep').forEach(el => {
+      el.onclick = () => { loadEpisode(parseInt(el.dataset.ep, 10), true, true); $('eps-panel').classList.remove('open'); };
+    });
+  }
+  function loadEpisode(i, doBroadcast, autoplay) {
+    if (i < 0 || i >= episodes.length) return;
+    epIndex = i;
+    const ep = episodes[i];
+    ytShow(false);
+    receivingStream = false; movie.srcObject = null;
+    movie.src = URL.createObjectURL(ep.file);
+    resumeKey = ep.key;
+    $('pl-title').textContent = ep.name;
+    $('movie-hint').innerHTML = 'Series mode — episode <b>' + (i + 1) + '</b> of ' + episodes.length;
+    $('btn-stream').style.display = '';
+    renderEps();
+    if (doBroadcast) broadcast({ type: 'ep', idx: i, name: ep.name });
+    if (autoplay) movie.addEventListener('loadeddata', function once() { movie.removeEventListener('loadeddata', once); tryPlay(); });
+  }
+  function nextEpisode(auto) {
+    if (!seriesMode || epIndex + 1 >= episodes.length) { if (!auto) toast('That was the last episode', 2500); return; }
+    loadEpisode(epIndex + 1, true, true);
+  }
+  function onRemoteEp(msg) {
+    if (!seriesMode || !episodes.length) { toast('Partner switched to: ' + msg.name, 4000); return; }
+    const i = Math.min(Math.max(0, msg.idx | 0), episodes.length - 1);
+    if (i !== epIndex) loadEpisode(i, false, true);
+  }
+  function probeOne(file) {
+    return new Promise((res, rej) => {
+      const v = document.createElement('video');
+      v.preload = 'metadata';
+      const url = URL.createObjectURL(file);
+      v.onloadedmetadata = () => { const d = v.duration; URL.revokeObjectURL(url); res(isFinite(d) ? d : 0); };
+      v.onerror = () => { URL.revokeObjectURL(url); rej(new Error('probe')); };
+      v.src = url;
+    });
+  }
+  async function probeDurations() {
+    for (const ep of episodes) {
+      if (ep.dur) continue;
+      const info = readResumeInfo(ep.key);
+      if (info.dur) { ep.dur = info.dur; continue; }
+      try { ep.dur = await probeOne(ep.file); } catch (e) { ep.dur = 0; }
+      renderEps();
+    }
+  }
+  $('btn-folder').onclick = () => $('folder-input').click();
+  $('folder-input').onchange = e => {
+    const files = [...e.target.files].filter(f => (f.type && f.type.startsWith('video/')) || /\.(mp4|m4v|webm|mkv|mov|avi)$/i.test(f.name));
+    if (!files.length) { toast('No video files found in that folder', 3500); return; }
+    files.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+    episodes = files.map(f => ({ file: f, name: f.name, key: 'file:' + f.name + '_' + f.size, dur: 0 }));
+    seriesMode = true;
+    $('pl-next').style.display = ''; $('pl-eps').style.display = '';
+    let start = episodes.findIndex(ep => !readResumeInfo(ep.key).done);
+    if (start < 0) start = 0;
+    loadEpisode(start, true, false);
+    probeDurations();
+    toast(episodes.length + ' episodes loaded — series mode on', 3500);
+    e.target.value = '';
+  };
+  $('pl-next').onclick = () => nextEpisode(false);
+  $('pl-eps').onclick  = () => { renderEps(); $('eps-panel').classList.toggle('open'); };
+  movie.addEventListener('ended', () => {
+    if (!seriesMode) return;
+    if (epIndex + 1 < episodes.length) { toast('Playing next episode…', 2500); nextEpisode(true); }
+  });
 
   // ---------- YOUTUBE (watch a YouTube video together, in sync) ----------
   let ytPlayer = null, ytActive = false, ytSuppress = false, ytPending = null;
@@ -1894,17 +2139,23 @@
   function readResume(key) {
     try { const m = JSON.parse(localStorage.getItem('wt_resume') || '{}'); return (m[key] && m[key].t) || 0; } catch (e) { return 0; }
   }
-  function writeResume(key, t) {
+  function writeResume(key, t, dur) {
     try {
       const m = JSON.parse(localStorage.getItem('wt_resume') || '{}');
-      m[key] = { t: Math.floor(t), u: Date.now() };
+      const prev = m[key] || {};
+      m[key] = { t: Math.floor(t), u: Date.now(), dur: Math.floor(dur || prev.dur || 0), done: false };
       const ks = Object.keys(m);
-      if (ks.length > 60) ks.sort((a, b) => m[a].u - m[b].u).slice(0, ks.length - 60).forEach(k => delete m[k]);
+      if (ks.length > 200) ks.sort((a, b) => m[a].u - m[b].u).slice(0, ks.length - 200).forEach(k => delete m[k]);
       localStorage.setItem('wt_resume', JSON.stringify(m));
     } catch (e) {}
   }
-  function clearResume(key) {
-    try { const m = JSON.parse(localStorage.getItem('wt_resume') || '{}'); delete m[key]; localStorage.setItem('wt_resume', JSON.stringify(m)); } catch (e) {}
+  function markWatched(key, dur) {   // finished → remember it as watched, restart from 0 next time
+    try {
+      const m = JSON.parse(localStorage.getItem('wt_resume') || '{}');
+      const prev = m[key] || {};
+      m[key] = { t: 0, u: Date.now(), dur: Math.floor(dur || prev.dur || 0), done: true };
+      localStorage.setItem('wt_resume', JSON.stringify(m));
+    } catch (e) {}
   }
   function curTime()    { return ytActive ? ytTime() : (movie.currentTime || 0); }
   function curDur()     { return ytActive ? (ytPlayer && ytPlayer.getDuration ? (ytPlayer.getDuration() || 0) : 0) : movie.duration; }
@@ -1912,10 +2163,10 @@
   function saveResume() {
     if (!resumeKey) return;
     const t = curTime(), d = curDur();
-    if (t > 5 && (!d || !isFinite(d) || t < d - 8)) writeResume(resumeKey, t);
-    else if (d && isFinite(d) && t >= d - 8) clearResume(resumeKey);   // finished → forget it
+    if (t > 5 && (!d || !isFinite(d) || t < d - 8)) writeResume(resumeKey, t, d);
+    else if (d && isFinite(d) && t >= d - 8) markWatched(resumeKey, d);
   }
-  setInterval(() => { if (resumeKey && curPlaying()) saveResume(); }, 5000);
+  setInterval(() => { if (resumeKey && curPlaying()) { saveResume(); renderEps(); } }, 5000);
   window.addEventListener('beforeunload', saveResume);
 
   // local file: jump to the saved spot once the video metadata is ready
@@ -1985,10 +2236,10 @@
     fsActive = true;
     fsStreamPlaying = receivingStream ? !movie.paused : true;
 
-    // move the movie into the stage (it keeps playing)
-    movie.removeAttribute('controls');
-    movie.replaceWith(moviePH);
-    fsMain.appendChild(movie);
+    // move the whole player (video + Netflix-style controls) into the stage
+    const plEl = $('player');
+    plEl.replaceWith(moviePH);
+    fsMain.appendChild(plEl);
 
     if (mode === 'partner') {
       const call = $('call-area');
@@ -1999,12 +2250,9 @@
       fsStage.classList.remove('with-partner');
     }
 
-    // Both modes get the same playback controls (a single toggle handles play/pause).
-    // Seek + time only apply to a local file — a live stream has no seekable timeline.
-    setDisp(fsBack, true);
-    setDisp(fsFwd, true);
-    setDisp(fsSeek, !receivingStream);
-    setDisp(fsTime, !receivingStream);
+    // playback is handled by the player's own Netflix-style bar now
+    setDisp(fsBack, false); setDisp(fsToggle, false); setDisp(fsFwd, false);
+    setDisp(fsSeek, false); setDisp(fsTime, false);
 
     fsStage.classList.add('active');
     // move the reaction/chat overlays inside the stage so they render over the movie in fullscreen
@@ -2039,9 +2287,8 @@
     fsActive = false;
     clearTimeout(fsHideTimer);
     fsStage.classList.remove('active', 'with-partner', 'controls-hidden');
-    // put the movie back
-    if (moviePH.parentNode) moviePH.replaceWith(movie);
-    movie.setAttribute('controls', '');
+    // put the player back
+    if (moviePH.parentNode) moviePH.replaceWith($('player'));
     // put the call area back
     if (callPH.parentNode) callPH.replaceWith($('call-area'));
     // return the reaction/chat overlays to the page body
@@ -2086,11 +2333,10 @@
   }
   function fullscreenMovie() {
     if (ytActive) { ytFullscreen(); return; }
-    const v = movie;
-    if (v.requestFullscreen)            { v.requestFullscreen().catch(() => enterFs('movie')); }
-    else if (v.webkitRequestFullscreen) { v.webkitRequestFullscreen(); }
-    else if (v.webkitEnterFullscreen)   { v.webkitEnterFullscreen(); }   // iPhone Safari
-    else                                { enterFs('movie'); }            // fallback: custom overlay
+    const el = $('player');   // fullscreen the player so our own controls come along
+    if (el.requestFullscreen)            { el.requestFullscreen().catch(() => enterFs('movie')); }
+    else if (el.webkitRequestFullscreen) { el.webkitRequestFullscreen(); }
+    else                                 { enterFs('movie'); }   // iOS: custom overlay keeps the skin
   }
   $('btn-fs-movie').onclick   = fullscreenMovie;
   $('btn-fs-partner').onclick = () => {
