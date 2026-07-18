@@ -326,12 +326,23 @@
   #yt-side .cam-wrap { width: 100%; }
   #yt-exit { display: none; }
   #yt-stage:fullscreen { background: #000; }
-  #yt-stage:fullscreen #yt-wrap { max-height: none; height: 100%; aspect-ratio: auto; border-radius: 0; }
+  #yt-stage:fullscreen #yt-wrap { max-height: none; height: 100%; width: auto; flex: 1; aspect-ratio: auto; border-radius: 0; }
   #yt-stage:fullscreen #yt-side { display: flex; flex-direction: column; gap: 8px; width: 300px; flex: none;
     padding: 8px; overflow-y: auto; background: #0b0d11; }
   #yt-stage:fullscreen #yt-exit { display: inline-flex; position: absolute; top: 12px; right: 12px; z-index: 5;
     background: rgba(0,0,0,.65); color: #fff; border: none; border-radius: 10px; padding: 8px 14px; cursor: pointer; }
-  @media (pointer: coarse) { #yt-stage:fullscreen #yt-side { width: 22vw; max-width: 130px; } }
+
+  /* iOS Safari can't fullscreen a <div>, so fall back to a full-viewport overlay
+     (the iframe is never moved, so the video keeps playing) */
+  #yt-stage.fake-fs { position: fixed; inset: 0; z-index: 150; background: #000; max-height: none; flex: none; display: flex; }
+  #yt-stage.fake-fs #yt-wrap { max-height: none; height: 100%; width: auto; flex: 1; aspect-ratio: auto; border-radius: 0; }
+  #yt-stage.fake-fs #yt-side { display: flex; flex-direction: column; gap: 8px; width: 300px; flex: none;
+    padding: 8px; overflow-y: auto; background: #0b0d11; }
+  #yt-stage.fake-fs #yt-exit { display: inline-flex; position: absolute; top: 12px; right: 12px; z-index: 5;
+    background: rgba(0,0,0,.65); color: #fff; border: none; border-radius: 10px; padding: 8px 14px; cursor: pointer; }
+  @media (pointer: coarse) {
+    #yt-stage:fullscreen #yt-side, #yt-stage.fake-fs #yt-side { width: 22vw; max-width: 130px; }
+  }
   body.yt #player { display: none; }
   #yt-row { display: flex; gap: 8px; }
   #yt-url { flex: 1; min-width: 0; background: var(--bg); border: 1px solid #2a3040; border-radius: 10px; padding: 10px; color: var(--text); font-size: 14px; }
@@ -2458,10 +2469,24 @@
   // Movie-only: use the device's NATIVE video fullscreen. On phones this hides the
   // browser tab/URL bar completely and shows the native playback controls, while our
   // play/pause/seek listeners still broadcast so everyone stays in sync.
+  function ytFakeFs(on) { $('yt-stage').classList.toggle('fake-fs', on); }
   function ytFullscreen() {
     const el = $('yt-stage');
     const fn = el.requestFullscreen || el.webkitRequestFullscreen;
-    if (fn) { try { const r = fn.call(el); if (r && r.catch) r.catch(() => {}); } catch (e) {} }
+    if (fn) {
+      try {
+        const r = fn.call(el);
+        if (r && r.catch) r.catch(() => ytFakeFs(true));
+        return;
+      } catch (e) {}
+    }
+    ytFakeFs(true);   // iOS Safari: no element fullscreen — use a full-viewport overlay
+  }
+  function ytExitAll() {
+    const stage = $('yt-stage');
+    if (stage.classList.contains('fake-fs')) ytFakeFs(false);
+    else { const fn = document.exitFullscreen || document.webkitExitFullscreen; if (fn) { try { fn.call(document); } catch (e) {} } }
+    ytFsPartnerExit();
   }
   // YouTube + partner: fullscreen the wrapper that already holds the iframe and move the
   // call tiles inside it — the iframe is never re-parented, so the video doesn't reload.
@@ -2491,10 +2516,10 @@
     document.body.appendChild($('react-pop'));
     document.body.appendChild($('sound-pop'));
   }
-  $('yt-exit').onclick = () => {
-    const fn = document.exitFullscreen || document.webkitExitFullscreen;
-    if (fn) { try { fn.call(document); } catch (e) {} }
-  };
+  $('yt-exit').onclick = ytExitAll;
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && $('yt-stage').classList.contains('fake-fs')) ytExitAll();
+  });
   function fullscreenMovie() {
     if (ytActive) { ytFullscreen(); return; }
     const el = $('player');   // fullscreen the player so our own controls come along
