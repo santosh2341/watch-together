@@ -845,6 +845,8 @@
   let receivingStream = false;  // someone is streaming their movie to us
   let streamingMovie = false;   // we are streaming our movie to the room
   let movieStreamMs = null;     // our outgoing movie MediaStream
+  let captureToken = 0;         // invalidates the previous capture when the source changes
+  let streamPos = { t: 0, d: 0, playing: false };   // streamer's real position, for the viewer's bar
   let ending = false;
   let lowData = false;
   let mediaVol = 1, callVol = 1;   // volume mixer levels (0..1)
@@ -1552,11 +1554,17 @@
         tryPlay();
       });
       incoming.on('close', () => {
-        receivingStream = false;
-        movieInCall = null;
-        movie.srcObject = null;
-        $('remote-controls').style.display = 'none';
-        $('movie-hint').textContent = 'Stream ended.';
+        // during an episode change the host closes this call and immediately opens a new one,
+        // so wait a moment and only tear down if nothing replaced it
+        if (movieInCall !== incoming) return;
+        setTimeout(() => {
+          if (movieInCall !== incoming) return;   // a newer stream arrived — keep watching
+          receivingStream = false;
+          movieInCall = null;
+          movie.srcObject = null;
+          $('remote-controls').style.display = 'none';
+          $('movie-hint').textContent = 'Stream ended.';
+        }, 1500);
       });
     } else {
       P(incoming.peer).call = incoming;
@@ -1684,6 +1692,13 @@
       else if (msg.action === 'pause') movie.pause();
       else if (msg.action === 'back') movie.currentTime = Math.max(0, movie.currentTime - 10);
       else if (msg.action === 'fwd') movie.currentTime = Math.min(movie.duration || Infinity, movie.currentTime + 10);
+      else if (msg.action === 'seek') movie.currentTime = Math.max(0, Math.min(movie.duration || Infinity, msg.t || 0));
+      return;
+    }
+
+    if (msg.type === 'spos') {   // streamer's position — drives the viewer's playback bar
+      streamPos = { t: msg.t || 0, d: msg.d || 0, playing: !!msg.playing };
+      plUpdate();
       return;
     }
 
@@ -1806,23 +1821,25 @@
   plEl.addEventListener('touchstart', plShowUI, { passive: true });
 
   function plUpdate() {
-    const d = movie.duration, t = movie.currentTime || 0;
-    const live = receivingStream || !isFinite(d) || !(d > 0);   // a live stream has no timeline
-    $('pl-seek').style.display = live ? 'none' : '';
-    if (!live) {
+    // when watching someone's stream, use the position they broadcast (the stream itself has no timeline)
+    let t, d, playing;
+    if (receivingStream) { t = streamPos.t; d = streamPos.d; playing = streamPos.playing; }
+    else { t = movie.currentTime || 0; d = movie.duration; playing = !movie.paused; }
+    const seekable = isFinite(d) && d > 0;
+    $('pl-seek').style.display = seekable ? '' : 'none';
+    if (seekable) {
       const pct = Math.max(0, Math.min(100, (t / d) * 100));
       $('pl-seek').value = Math.round(pct * 10);
       $('pl-seek').style.setProperty('--seek-fill', pct.toFixed(2) + '%');
       $('pl-time').textContent = fmtTime(t) + ' / ' + fmtTime(d);
     } else { $('pl-time').textContent = fmtTime(t) + (receivingStream ? ' · live' : ''); }
-    const playing = !movie.paused;
     $('pl-play').innerHTML = playing ? PL.pause : PL.play;
     $('pl-center').innerHTML = PL.play;
     $('pl-center').style.display = playing ? 'none' : 'flex';
     if (!playing) plEl.classList.add('show-ui');
   }
   function plToggle() {
-    if (receivingStream) { broadcast({ type: 'ctrl', action: movie.paused ? 'play' : 'pause' }); return; }
+    if (receivingStream) { broadcast({ type: 'ctrl', action: streamPos.playing ? 'pause' : 'play' }); return; }
     if (movie.paused) tryPlay(); else movie.pause();
   }
   function plSkip(dir) {
@@ -1839,8 +1856,13 @@
     setTimeout(plSyncFsIcon, 100);
   };
   $('pl-seek').oninput   = function () {
-    this.style.setProperty('--seek-fill', (this.value / 10) + '%');   // live fill while dragging
-    if (receivingStream || !isFinite(movie.duration)) return;
+    const pct = this.value / 10;
+    this.style.setProperty('--seek-fill', pct + '%');   // live fill while dragging
+    if (receivingStream) {                              // scrub the streamer's playback
+      if (streamPos.d > 0) broadcast({ type: 'ctrl', action: 'seek', t: (pct / 100) * streamPos.d });
+      return;
+    }
+    if (!isFinite(movie.duration)) return;
     movie.currentTime = (this.value / 1000) * movie.duration;
   };
   $('pl-vol').oninput = function () {
@@ -2057,7 +2079,9 @@
     canvas.width = Math.round(w * scale);
     canvas.height = Math.round(h * scale);
     const ctx = canvas.getContext('2d');
+    const myToken = ++captureToken;          // stops the previous episode's draw loop
     const draw = () => {
+      if (myToken !== captureToken) return;  // a newer capture replaced this one
       try { ctx.drawImage(movie, 0, 0, canvas.width, canvas.height); } catch (e) {}
       if ('requestVideoFrameCallback' in movie) movie.requestVideoFrameCallback(draw);
       else requestAnimationFrame(draw);
@@ -2094,11 +2118,32 @@
   }
   function stopStreaming() {
     streamingMovie = false;
+    captureToken++;   // kill any canvas-fallback draw loop
     peers.forEach(p => { try { if (p.movieOut) p.movieOut.close(); } catch (e) {} p.movieOut = null; });
     if (movieStreamMs) { try { movieStreamMs.getTracks().forEach(t => t.stop()); } catch (e) {} movieStreamMs = null; }
     setStreamBtn(false);
     toast('Stopped streaming', 2500);
   }
+
+  // When the source changes (next episode / new file) the old captured tracks end,
+  // so partners would freeze on the previous episode — re-capture and re-send.
+  function restartStreaming() {
+    if (!streamingMovie) return;
+    try {
+      if (movieStreamMs) { try { movieStreamMs.getTracks().forEach(t => t.stop()); } catch (e) {} }
+      movieStreamMs = captureMovieStream();
+      peers.forEach((p, id) => streamMovieTo(id));   // streamMovieTo closes the old call first
+    } catch (e) { toast('Could not restart the stream: ' + e.message, 4000); }
+  }
+  movie.addEventListener('loadeddata', () => {
+    if (streamingMovie) setTimeout(restartStreaming, 200);   // let the new episode settle first
+  });
+  // tell viewers where we are so their playback bar works on a live stream
+  setInterval(() => {
+    if (streamingMovie && movie.src) {
+      broadcast({ type: 'spos', t: movie.currentTime || 0, d: isFinite(movie.duration) ? movie.duration : 0, playing: !movie.paused });
+    }
+  }, 1000);
   $('btn-stream').onclick = () => {
     if (streamingMovie) { stopStreaming(); return; }      // toggle off
     if (!movie.src) { toast('Choose a video file first'); return; }
