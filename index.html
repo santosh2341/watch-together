@@ -76,8 +76,11 @@
   #tp-mbps { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
   @media (max-width: 620px) {
     .h1-txt { display: none; }
-    #status, #tp-mbps, #top-profile .sep { display: none; }
-    #tp-name { max-width: 90px; }
+    #status, #top-profile .sep { display: none; }
+    #top-profile { gap: 6px; font-size: 11px; }
+    #tp-mbps { display: inline; font-size: 11px; }
+    #tp-room { font-size: 11px; }
+    #tp-name { max-width: 70px; font-size: 11px; }
     header { padding: 10px; }
   }
 
@@ -233,7 +236,7 @@
     font-size: 44px; user-select: none;
   }
   .cam-wrap.cam-off video { display: none; }   /* reveal the avatar when the camera is off */
-  #local-cam { transform: scaleX(-1); }        /* mirror your own preview, like a selfie */
+  .cam-wrap video { transform: scaleX(-1); }   /* mirror all camera views (selfie-style) */
   .cam-label {
     position: absolute;
     bottom: 6px; left: 8px;
@@ -338,7 +341,7 @@
   #mix-row { display: flex; gap: 16px; padding: 8px 12px; background: var(--card); flex-wrap: wrap; align-items: center; }
   #mix-row .mix { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); flex: 1; min-width: 170px; }
   #mix-row .mix input[type="range"] { flex: 1; accent-color: var(--accent); min-width: 80px; }
-  #mix-row .mix span { white-space: nowrap; }
+  #mix-row .mix span { white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; }
   .hint { font-size: 12px; color: var(--muted); text-align: center; }
   #file-row { display: flex; gap: 8px; flex-wrap: wrap; }
   #file-row .btn { padding: 12px; font-size: 14px; }
@@ -767,8 +770,8 @@
   </div>
 
   <div id="mix-row">
-    <label class="mix"><span>🎬 Media</span><input type="range" id="vol-media" min="0" max="100" value="100" title="Movie / music volume"></label>
-    <label class="mix"><span>🗣️ Call</span><input type="range" id="vol-call" min="0" max="100" value="100" title="Video-call volume"></label>
+    <label class="mix"><span><svg class="ic" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M7 4v16M17 4v16M2 9h5M17 9h5M2 15h5M17 15h5"/></svg> Media</span><input type="range" id="vol-media" min="0" max="100" value="100" title="Movie / music volume"></label>
+    <label class="mix"><span><svg class="ic" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg> Call</span><input type="range" id="vol-call" min="0" max="100" value="100" title="Video-call volume"></label>
   </div>
 
   <div id="controls">
@@ -1037,7 +1040,8 @@
     const now = performance.now();
     if (_mbpsT && total >= _mbpsBytes) {
       const mbps = Math.max(0, (total - _mbpsBytes) * 8 / ((now - _mbpsT) / 1000) / 1e6);
-      $('tp-mbps').textContent = (mbps < 10 ? mbps.toFixed(2) : mbps.toFixed(1)) + ' Mbps';
+      $('tp-mbps').textContent = mbps < 1 ? Math.round(mbps * 1000) + ' Kbps'
+                               : (mbps < 10 ? mbps.toFixed(2) : mbps.toFixed(1)) + ' Mbps';
     }
     _mbpsBytes = total; _mbpsT = now;
   }
