@@ -304,6 +304,23 @@
   .ep-bar { height: 3px; background: #3a3a3d; border-radius: 2px; margin-top: 5px; overflow: hidden; }
   .ep-fill { height: 100%; background: #e50914; width: 0%; }
 
+  /* reconnect banner */
+  #reconnect-bar { display: none; position: fixed; top: 0; left: 0; right: 0; z-index: 400;
+    background: #b0413e; color: #fff; text-align: center; padding: 8px 12px; font-size: 13px; }
+  #reconnect-bar.show { display: block; }
+
+  /* draw / point layer over the video */
+  #draw-layer { position: absolute; inset: 0; z-index: 2; pointer-events: none; touch-action: none; }
+  #player.drawing #draw-layer { pointer-events: auto; cursor: crosshair; }
+  #player.drawing { outline: 2px solid #e50914; outline-offset: -2px; }
+  .pl-btn.on { color: #e50914; }
+
+  /* sleep-timer menu (shares the audio-menu look) */
+  #sleep-menu { display: none; position: fixed; bottom: 74px; left: 50%; transform: translateX(-50%);
+    background: rgba(20,23,30,.97); border: 1px solid #2a3040; border-radius: 12px; padding: 8px;
+    z-index: 330; min-width: 200px; box-shadow: 0 6px 22px rgba(0,0,0,.55); }
+  #sleep-menu.open { display: block; }
+
   /* audio-language menu */
   #audio-menu { display: none; position: fixed; bottom: 74px; left: 50%; transform: translateX(-50%);
     background: rgba(20,23,30,.97); border: 1px solid #2a3040; border-radius: 12px; padding: 8px;
@@ -719,6 +736,7 @@
   <div id="player-area">
     <div id="player">
       <video id="movie" playsinline></video>
+      <canvas id="draw-layer"></canvas>
       <div id="pl-ui">
         <div id="pl-top"><span id="pl-title"></span></div>
         <button id="pl-center" title="Play"></button>
@@ -734,6 +752,8 @@
             </div>
             <span id="pl-time">0:00 / 0:00</span>
             <span class="pl-spacer"></span>
+            <button id="pl-draw" class="pl-btn" title="Draw / point on the video"></button>
+            <button id="pl-sleep" class="pl-btn" title="Sleep timer"></button>
             <button id="pl-audio" class="pl-btn" title="Audio language" style="display:none"></button>
             <button id="pl-next" class="pl-btn" title="Next episode" style="display:none"></button>
             <button id="pl-eps" class="pl-btn" title="Episodes" style="display:none"></button>
@@ -759,6 +779,7 @@
       <button class="btn secondary" id="btn-stream" style="display:none"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49M7.76 16.24a6 6 0 0 1 0-8.49M19.07 4.93a10 10 0 0 1 0 14.14M4.93 19.07a10 10 0 0 1 0-14.14"/></svg> Stream to room</button>
       <button class="btn secondary" id="btn-folder"><svg class="ic" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><path d="M8 13h8M8 17h5"/></svg> Choose folder (series)</button>
       <button class="btn secondary" id="btn-host-file"><svg class="ic" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg> Host a file</button>
+      <button class="btn secondary" id="btn-screen"><svg class="ic" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg> Share screen</button>
       <input type="file" id="file-input" accept="video/*" hidden>
       <input type="file" id="folder-input" webkitdirectory directory multiple hidden>
       <input type="file" id="host-file-input" accept="video/*,audio/*" hidden>
@@ -844,6 +865,8 @@
 <div id="react-pop" class="social-pop"></div>
 <div id="sound-pop" class="social-pop"></div>
 <div id="audio-menu"></div>
+<div id="sleep-menu"></div>
+<div id="reconnect-bar">Connection lost — reconnecting…</div>
 <audio id="alt-audio" preload="auto"></audio>
 <div id="chat-panel">
   <div id="chat-head"><span>💬 Chat</span><button id="chat-x" title="Close">✕</button></div>
@@ -1170,7 +1193,29 @@
     chatOverlay.appendChild(d);
     setTimeout(() => d.remove(), 5000);
   }
-  function addChatMsg(emoji, name, text, me) {
+  // --- chat history (kept on this device) ---
+  function saveChatLog(entry) {
+    try {
+      const log = JSON.parse(localStorage.getItem('wt_chat') || '[]');
+      log.push(entry);
+      while (log.length > 200) log.shift();
+      localStorage.setItem('wt_chat', JSON.stringify(log));
+    } catch (e) {}
+  }
+  function restoreChatLog() {
+    let log = [];
+    try { log = JSON.parse(localStorage.getItem('wt_chat') || '[]'); } catch (e) {}
+    if (!log.length) return;
+    log.forEach(m => addChatMsg(m.emoji, m.name, m.text, m.me, true));
+    const sep = document.createElement('div');
+    sep.className = 'chat-msg';
+    sep.style.cssText = 'color:var(--muted);font-size:11px;text-align:center;border-top:1px solid #2a3040;padding-top:8px;margin-top:4px';
+    sep.textContent = 'earlier messages above';
+    chatMsgs.appendChild(sep);
+  }
+  $('chat-x').title = 'Close';
+  function addChatMsg(emoji, name, text, me, fromHistory) {
+    if (!fromHistory) saveChatLog({ emoji, name, text, me });
     const d = document.createElement('div');
     d.className = 'chat-msg' + (me ? ' me' : '');
     const who = document.createElement('span'); who.className = 'who';
@@ -1179,6 +1224,7 @@
     d.appendChild(who); d.appendChild(tx);
     chatMsgs.appendChild(d);
     chatMsgs.scrollTop = chatMsgs.scrollHeight;
+    if (fromHistory) return;
     if (!me) {
       chatToast((emoji ? emoji + ' ' : '') + (name || 'Guest') + ': ' + text);
       if (!chatPanel.classList.contains('open')) setBadge(chatUnread + 1);
@@ -1193,6 +1239,7 @@
     chatInput.value = '';
   });
   $('chat-x').onclick = closeChat;
+  restoreChatLog();   // bring back previous conversation
 
   // reaction / sound pop-ups, opened by the compact buttons (main bar + fullscreen)
   function closePops() { $('react-pop').classList.remove('open'); $('sound-pop').classList.remove('open'); }
@@ -1216,6 +1263,7 @@
     }
     if (!e.target.closest('.social-pop')) closePops();  // clicking elsewhere closes the pop-ups
     if (!e.target.closest('#audio-menu')) $('audio-menu').classList.remove('open');
+    if (!e.target.closest('#sleep-menu')) $('sleep-menu').classList.remove('open');
   });
 
   // ---------- HOST A FILE (resumable, pausable peer-to-peer download) ----------
@@ -1492,6 +1540,8 @@
   function bindPeerConn(c) {
     c.on('open', () => {
       P(c.peer).conn = c;
+      wasConnected = true;
+      stopReconnect();
       updateStatus();
       // tell the other side who we are (name + avatar) and our current camera state
       c.send({ type: 'profile', name: profile.name, emoji: profile.emoji, color: profile.color });
@@ -1529,13 +1579,8 @@
     peers.delete(id);
     removeTile(id);
     updateStatus();
-    if (!isHost && id === hostId) {
-      toast('Host left — session ended', 3000);
-      ending = true;
-      setTimeout(() => location.reload(), 2500);
-    } else {
-      toast('Someone left the room', 2500);
-    }
+    // don't end the session on a blip — try to get them back first
+    if (!ending) { toast('Connection lost — trying to reconnect…', 3000); startReconnect(); }
   }
 
   // ---------- CAMERA TILES ----------
@@ -1693,6 +1738,7 @@
     // ---- YouTube watch-together ----
     if (msg.type === 'yt-load') { ytRemoteLoad(msg.vid, msg.t || 0); return; }
     if (msg.type === 'yt')      { ytRemote(msg); return; }
+    if (msg.type === 'draw')    { addStroke({ pts: msg.pts || [], color: msg.color, t: Date.now() }); return; }
     if (msg.type === 'ep')      { onRemoteEp(msg); return; }   // series: switch episode together
     if (msg.type === 'eplist')  { onRemoteEpList(msg.names); return; }
 
@@ -1829,6 +1875,8 @@
     fsExit:'<svg class="pl-ic" viewBox="0 0 24 24"><path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/></svg>',
     next:  '<svg class="pl-ic solid" viewBox="0 0 24 24"><polygon points="5 4 15 12 5 20 5 4"/><rect x="17" y="4" width="3" height="16"/></svg>',
     audio: '<svg class="pl-ic" viewBox="0 0 24 24"><path d="M4 6h10M9 3v3c0 4-2 6.5-5 8"/><path d="M11 14c-1.2-1-2.6-2.6-3-4"/><path d="M12.5 20l4.2-9 4.3 9M14.2 17h5.6"/></svg>',
+    draw:  '<svg class="pl-ic" viewBox="0 0 24 24"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.6 7.6"/><circle cx="11" cy="11" r="2"/></svg>',
+    sleep: '<svg class="pl-ic" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>',
     list:  '<svg class="pl-ic" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>'
   };
   const plEl = $('player');
@@ -1838,6 +1886,8 @@
   $('pl-mute').innerHTML  = PL.vol;
   $('pl-fs').innerHTML    = PL.fs;
   $('pl-audio').innerHTML = PL.audio;
+  $('pl-draw').innerHTML  = PL.draw;
+  $('pl-sleep').innerHTML = PL.sleep;
   $('pl-next').innerHTML  = PL.next + ' Next';
   $('pl-eps').innerHTML   = PL.list + ' Episodes';
   $('pl-center').innerHTML = PL.play;
@@ -2275,9 +2325,208 @@
   $('pl-next').onclick = () => nextEpisode(false);
   $('pl-eps').onclick  = () => { renderEps(); $('eps-panel').classList.toggle('open'); };
   movie.addEventListener('ended', () => {
+    if (sleepEndOfEp) {   // sleep timer set to "end of this episode"
+      sleepEndOfEp = false; $('pl-sleep').classList.remove('on');
+      toast('Sleep timer — stopping here. Good night 🌙', 6000);
+      return;
+    }
     if (!seriesMode) return;
     if (epIndex + 1 < episodes.length) { toast('Playing next episode…', 2500); nextEpisode(true); }
   });
+
+  // ---------- ROBUSTNESS: AUTO-RECONNECT ----------
+  let reconnectTimer = null, reconnectTries = 0, wasConnected = false;
+  function showReconnect(on) { $('reconnect-bar').classList.toggle('show', on); }
+  function stopReconnect() {
+    clearInterval(reconnectTimer); reconnectTimer = null; reconnectTries = 0; showReconnect(false);
+  }
+  function startReconnect() {
+    if (ending || reconnectTimer || !wasConnected) return;
+    showReconnect(true);
+    reconnectTries = 0;
+    reconnectTimer = setInterval(() => {
+      if (ending) return stopReconnect();
+      if (peers.size > 0) return stopReconnect();          // someone came back
+      reconnectTries++;
+      if (reconnectTries > 40) {                            // ~2 minutes, then give up
+        stopReconnect();
+        $('reconnect-bar').textContent = 'Could not reconnect — reload to start again';
+        showReconnect(true);
+        return;
+      }
+      try {
+        if (peer && peer.disconnected && !peer.destroyed) peer.reconnect();
+        if (!isHost && hostId && peer && !peer.destroyed && peer.open) { connectTo(hostId); callPeer(hostId); }
+      } catch (e) {}
+    }, 3000);
+  }
+
+  // ---------- ROBUSTNESS: ADAPTIVE STREAM QUALITY ----------
+  const QUALITY = [
+    { name: 'high', bitrate: 1200000, scale: 1 },
+    { name: 'medium', bitrate: 600000, scale: 1.5 },
+    { name: 'low', bitrate: 300000, scale: 2 },
+    { name: 'very low', bitrate: 150000, scale: 3 }
+  ];
+  let qLevel = 0, qGood = 0;
+  function applyQuality() {
+    const q = QUALITY[qLevel];
+    peers.forEach(p => {
+      const pc = p.movieOut && p.movieOut.peerConnection;
+      if (!pc) return;
+      pc.getSenders().forEach(sn => {
+        if (!sn.track || sn.track.kind !== 'video') return;
+        const par = sn.getParameters();
+        if (!par.encodings || !par.encodings.length) par.encodings = [{}];
+        par.encodings[0].maxBitrate = lowData ? Math.min(q.bitrate, 300000) : q.bitrate;
+        par.encodings[0].scaleResolutionDownBy = q.scale;
+        sn.setParameters(par).catch(() => {});
+      });
+    });
+  }
+  let _lastLost = 0, _lastPkts = 0;
+  async function adaptQuality() {
+    if (!streamingMovie || peers.size === 0) return;
+    let avail = 0, lost = 0, pkts = 0;
+    for (const [, p] of peers) {
+      const pc = p.movieOut && p.movieOut.peerConnection;
+      if (!pc) continue;
+      try {
+        const stats = await pc.getStats();
+        stats.forEach(r => {
+          if (r.type === 'candidate-pair' && r.state === 'succeeded' && r.availableOutgoingBitrate) {
+            avail = Math.max(avail, r.availableOutgoingBitrate);
+          }
+          if (r.type === 'outbound-rtp' && r.kind === 'video') {
+            if (r.packetsSent) pkts += r.packetsSent;
+          }
+          if (r.type === 'remote-inbound-rtp' && r.packetsLost != null) lost += r.packetsLost;
+        });
+      } catch (e) {}
+    }
+    const dLost = Math.max(0, lost - _lastLost), dPkts = Math.max(1, pkts - _lastPkts);
+    _lastLost = lost; _lastPkts = pkts;
+    const lossPct = (dLost / dPkts) * 100;
+    const target = QUALITY[qLevel].bitrate;
+    const struggling = (avail > 0 && avail < target * 0.7) || lossPct > 5;
+    const comfortable = (avail === 0 || avail > target * 1.6) && lossPct < 1;
+    if (struggling && qLevel < QUALITY.length - 1) {
+      qLevel++; qGood = 0; applyQuality();
+      toast('Connection is slow — quality lowered to ' + QUALITY[qLevel].name, 3000);
+    } else if (comfortable && qLevel > 0) {
+      qGood++;
+      if (qGood >= 3) { qLevel--; qGood = 0; applyQuality(); toast('Quality raised to ' + QUALITY[qLevel].name, 2500); }
+    } else { qGood = 0; }
+  }
+  setInterval(adaptQuality, 5000);
+
+  // ---------- SCREEN SHARE ----------
+  let screenSharing = false;
+  $('btn-screen').onclick = async () => {
+    if (screenSharing) { stopStreaming(); return; }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+      toast('Screen sharing isn\'t supported on this device', 4000); return;
+    }
+    if (peers.size === 0) { toast('No one else is in the room yet', 3000); return; }
+    try {
+      const s = await navigator.mediaDevices.getDisplayMedia({
+        video: { frameRate: { ideal: 30, max: 30 } }, audio: true
+      });
+      if (movieStreamMs) { try { movieStreamMs.getTracks().forEach(t => t.stop()); } catch (e) {} }
+      movieStreamMs = s; streamingMovie = true; screenSharing = true;
+      peers.forEach((p, id) => streamMovieTo(id));
+      setStreamBtn(true);
+      $('btn-screen').classList.add('off');
+      $('btn-screen').innerHTML = '<svg class="ic" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg> Stop sharing';
+      s.getVideoTracks()[0].onended = () => stopStreaming();   // user hit the browser's Stop button
+      toast('Sharing your screen — DRM-protected apps may appear black', 6000);
+    } catch (e) { if (e && e.name !== 'NotAllowedError') toast('Could not share screen: ' + e.message, 4000); }
+  };
+
+  // ---------- SLEEP TIMER ----------
+  let sleepAt = 0, sleepEndOfEp = false;
+  function renderSleepMenu() {
+    const opts = [15, 30, 45, 60, 90];
+    let html = '<div class="aud-head">Sleep timer</div>';
+    opts.forEach(m => { html += '<div class="aud-item" data-sleep="' + m + '">' + m + ' minutes</div>'; });
+    html += '<div class="aud-item" data-sleep="ep">At the end of this episode</div>';
+    if (sleepAt || sleepEndOfEp) html += '<div class="aud-item on" data-sleep="off">✕ Cancel timer</div>';
+    $('sleep-menu').innerHTML = html;
+    $('sleep-menu').querySelectorAll('[data-sleep]').forEach(el => {
+      el.onclick = () => {
+        const v = el.dataset.sleep;
+        $('sleep-menu').classList.remove('open');
+        if (v === 'off') { sleepAt = 0; sleepEndOfEp = false; $('pl-sleep').classList.remove('on'); toast('Sleep timer cancelled', 2000); }
+        else if (v === 'ep') { sleepEndOfEp = true; sleepAt = 0; $('pl-sleep').classList.add('on'); toast('Will stop at the end of this episode', 3000); }
+        else { sleepAt = Date.now() + parseInt(v, 10) * 60000; sleepEndOfEp = false; $('pl-sleep').classList.add('on'); toast('Sleep timer set for ' + v + ' minutes', 3000); }
+      };
+    });
+  }
+  $('pl-sleep').onclick = e => { e.stopPropagation(); renderSleepMenu(); $('sleep-menu').classList.toggle('open'); };
+  setInterval(() => {
+    if (sleepAt && Date.now() >= sleepAt) {
+      sleepAt = 0; $('pl-sleep').classList.remove('on');
+      try { movie.pause(); } catch (e) {}
+      if (ytActive) ytPause();
+      toast('Sleep timer — paused. Good night 🌙', 6000);
+    }
+  }, 1000);
+
+  // ---------- DRAW / POINT ON THE VIDEO ----------
+  const dcv = $('draw-layer');
+  const dctx = dcv.getContext ? dcv.getContext('2d') : null;
+  let strokes = [], drawMode = false, drawingNow = false, curStroke = null, rafOn = false;
+  function resizeDraw() { if (!dctx) return; dcv.width = plEl.clientWidth || 640; dcv.height = plEl.clientHeight || 360; }
+  window.addEventListener('resize', resizeDraw);
+  function drawFrame() {
+    if (!dctx) return;
+    const now = Date.now();
+    strokes = strokes.filter(s => now - s.t < 5000);
+    dctx.clearRect(0, 0, dcv.width, dcv.height);
+    strokes.forEach(s => {
+      dctx.globalAlpha = Math.max(0, 1 - (now - s.t) / 5000);
+      dctx.strokeStyle = s.color || '#e50914';
+      dctx.lineWidth = 4; dctx.lineCap = 'round'; dctx.lineJoin = 'round';
+      dctx.beginPath();
+      s.pts.forEach((p, i) => {
+        const x = p.x * dcv.width, y = p.y * dcv.height;
+        if (i) dctx.lineTo(x, y); else dctx.moveTo(x, y);
+      });
+      if (s.pts.length === 1) { dctx.arc(s.pts[0].x * dcv.width, s.pts[0].y * dcv.height, 10, 0, 6.3); }
+      dctx.stroke();
+    });
+    dctx.globalAlpha = 1;
+    if (strokes.length) requestAnimationFrame(drawFrame); else rafOn = false;
+  }
+  function addStroke(s) { strokes.push(s); if (!rafOn) { rafOn = true; resizeDraw(); requestAnimationFrame(drawFrame); } }
+  function nrm(e) { const r = dcv.getBoundingClientRect(); return { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height }; }
+  if (dctx) {
+    dcv.addEventListener('pointerdown', e => {
+      if (!drawMode) return;
+      e.preventDefault(); drawingNow = true;
+      curStroke = { pts: [nrm(e)], color: profile.color, t: Date.now() };
+      addStroke(curStroke);
+    });
+    dcv.addEventListener('pointermove', e => {
+      if (!drawingNow || !curStroke) return;
+      curStroke.pts.push(nrm(e)); curStroke.t = Date.now();
+    });
+    const endStroke = () => {
+      if (!drawingNow || !curStroke) return;
+      drawingNow = false;
+      broadcast({ type: 'draw', pts: curStroke.pts, color: curStroke.color });
+      curStroke = null;
+    };
+    dcv.addEventListener('pointerup', endStroke);
+    dcv.addEventListener('pointerleave', endStroke);
+  }
+  $('pl-draw').onclick = () => {
+    drawMode = !drawMode;
+    plEl.classList.toggle('drawing', drawMode);
+    $('pl-draw').classList.toggle('on', drawMode);
+    resizeDraw();
+    toast(drawMode ? 'Draw on the video — your partner sees it too' : 'Drawing off', 2500);
+  };
 
   // ---------- YOUTUBE (watch a YouTube video together, in sync) ----------
   let ytPlayer = null, ytActive = false, ytSuppress = false, ytPending = null;
@@ -2425,6 +2674,11 @@
     peers.forEach(p => { try { if (p.movieOut) p.movieOut.close(); } catch (e) {} p.movieOut = null; });
     if (movieStreamMs) { try { movieStreamMs.getTracks().forEach(t => t.stop()); } catch (e) {} movieStreamMs = null; }
     setStreamBtn(false);
+    if (screenSharing) {
+      screenSharing = false;
+      $('btn-screen').classList.remove('off');
+      $('btn-screen').innerHTML = '<svg class="ic" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg> Share screen';
+    }
     toast('Stopped streaming', 2500);
   }
 
