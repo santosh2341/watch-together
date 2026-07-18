@@ -304,6 +304,16 @@
   .ep-bar { height: 3px; background: #3a3a3d; border-radius: 2px; margin-top: 5px; overflow: hidden; }
   .ep-fill { height: 100%; background: #e50914; width: 0%; }
 
+  /* audio-language menu */
+  #audio-menu { display: none; position: fixed; bottom: 74px; left: 50%; transform: translateX(-50%);
+    background: rgba(20,23,30,.97); border: 1px solid #2a3040; border-radius: 12px; padding: 8px;
+    z-index: 330; min-width: 210px; max-height: 50vh; overflow-y: auto; box-shadow: 0 6px 22px rgba(0,0,0,.55); }
+  #audio-menu.open { display: block; }
+  .aud-head { font-size: 12px; color: var(--muted); padding: 4px 10px 8px; }
+  .aud-item { padding: 10px 12px; border-radius: 8px; cursor: pointer; font-size: 13px; }
+  .aud-item:hover { background: #2a2a2e; }
+  .aud-item.on { color: #e50914; font-weight: 600; }
+
   /* phones/tablets: finger-sized controls */
   @media (pointer: coarse) {
     #pl-seek { height: 28px; }
@@ -724,6 +734,7 @@
             </div>
             <span id="pl-time">0:00 / 0:00</span>
             <span class="pl-spacer"></span>
+            <button id="pl-audio" class="pl-btn" title="Audio language" style="display:none"></button>
             <button id="pl-next" class="pl-btn" title="Next episode" style="display:none"></button>
             <button id="pl-eps" class="pl-btn" title="Episodes" style="display:none"></button>
             <button id="pl-fs" class="pl-btn" title="Full screen"></button>
@@ -832,6 +843,8 @@
 <div id="chat-overlay"></div>
 <div id="react-pop" class="social-pop"></div>
 <div id="sound-pop" class="social-pop"></div>
+<div id="audio-menu"></div>
+<audio id="alt-audio" preload="auto"></audio>
 <div id="chat-panel">
   <div id="chat-head"><span>💬 Chat</span><button id="chat-x" title="Close">✕</button></div>
   <div id="chat-msgs"></div>
@@ -865,6 +878,7 @@
   let lowData = false;
   let mediaVol = 1, callVol = 1;   // volume mixer levels (0..1)
   let resumeKey = null;            // identity of the currently loaded video, for resume-position
+  let currentFile = null;          // the File currently playing (needed to extract audio tracks)
   let audioCtx = null, movieSrcNode = null; // for iOS canvas-capture audio
   let myRoomCode = '';           // current room code (shown in the header)
   let movieInCall = null;        // incoming movie-stream call (counted in live Mbps)
@@ -1201,6 +1215,7 @@
       return;
     }
     if (!e.target.closest('.social-pop')) closePops();  // clicking elsewhere closes the pop-ups
+    if (!e.target.closest('#audio-menu')) $('audio-menu').classList.remove('open');
   });
 
   // ---------- HOST A FILE (resumable, pausable peer-to-peer download) ----------
@@ -1790,6 +1805,8 @@
     movie.srcObject = null;
     $('remote-controls').style.display = 'none';
     movie.src = URL.createObjectURL(f);
+    currentFile = f;
+    resetAltAudio();
     resumeKey = 'file:' + f.name + '_' + f.size;   // remember position for this file
     seriesMode = false; episodes = []; epIndex = -1;
     $('pl-next').style.display = 'none'; showEpsButton();
@@ -1811,6 +1828,7 @@
     fs:    '<svg class="pl-ic" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg>',
     fsExit:'<svg class="pl-ic" viewBox="0 0 24 24"><path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/></svg>',
     next:  '<svg class="pl-ic solid" viewBox="0 0 24 24"><polygon points="5 4 15 12 5 20 5 4"/><rect x="17" y="4" width="3" height="16"/></svg>',
+    audio: '<svg class="pl-ic" viewBox="0 0 24 24"><path d="M4 6h10M9 3v3c0 4-2 6.5-5 8"/><path d="M11 14c-1.2-1-2.6-2.6-3-4"/><path d="M12.5 20l4.2-9 4.3 9M14.2 17h5.6"/></svg>',
     list:  '<svg class="pl-ic" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>'
   };
   const plEl = $('player');
@@ -1819,6 +1837,7 @@
   $('pl-fwd').innerHTML   = PL.fwd;
   $('pl-mute').innerHTML  = PL.vol;
   $('pl-fs').innerHTML    = PL.fs;
+  $('pl-audio').innerHTML = PL.audio;
   $('pl-next').innerHTML  = PL.next + ' Next';
   $('pl-eps').innerHTML   = PL.list + ' Episodes';
   $('pl-center').innerHTML = PL.play;
@@ -1897,6 +1916,225 @@
   movie.addEventListener('loadedmetadata', plUpdate);
   movie.addEventListener('durationchange', plUpdate);
 
+  // ---------- AUDIO TRACKS (multi-language files) ----------
+  // MP4 files use 3-letter (ISO 639-2) codes; browsers often report 2-letter — handle both
+  const LANGS = {
+    te:'Telugu',  tel:'Telugu',   hi:'Hindi',     hin:'Hindi',    en:'English', eng:'English',
+    ta:'Tamil',   tam:'Tamil',    ml:'Malayalam', mal:'Malayalam',kn:'Kannada', kan:'Kannada',
+    bn:'Bengali', ben:'Bengali',  mr:'Marathi',   mar:'Marathi',  gu:'Gujarati',guj:'Gujarati',
+    pa:'Punjabi', pan:'Punjabi',  ur:'Urdu',      urd:'Urdu',     es:'Spanish', spa:'Spanish',
+    fr:'French',  fre:'French',   fra:'French',   de:'German',    ger:'German', deu:'German',
+    ja:'Japanese',jpn:'Japanese', ko:'Korean',    kor:'Korean',   zh:'Chinese', chi:'Chinese', zho:'Chinese',
+    ru:'Russian', rus:'Russian',  ar:'Arabic',    ara:'Arabic',   pt:'Portuguese', por:'Portuguese',
+    it:'Italian', ita:'Italian',  und:'', mul:'Multiple'
+  };
+  function langName(code) {
+    if (!code) return '';
+    const c = String(code).toLowerCase().split('-')[0].trim();
+    return (c in LANGS) ? LANGS[c] : code;
+  }
+  function trackLabel(t, i) { return t.label || langName(t.language) || ('Track ' + (i + 1)); }
+  function setAudioTrack(i, notify) {
+    const at = movie.audioTracks;
+    if (!at || i < 0 || i >= at.length) return;
+    for (let k = 0; k < at.length; k++) { try { at[k].enabled = (k === i); } catch (e) {} }
+    const lang = (at[i].language || '').toLowerCase().split('-')[0];
+    if (lang) { try { localStorage.setItem('wt_audio_lang', lang); } catch (e) {} }
+    if (notify) { toast('Audio: ' + trackLabel(at[i], i), 2500); refreshAudioTracks(); }
+  }
+  function refreshAudioTracks() {
+    const at = movie.audioTracks, menu = $('audio-menu');
+    if (ytActive || receivingStream) { $('pl-audio').style.display = 'none'; menu.classList.remove('open'); return; }
+
+    // Path B (Chrome/Android/Windows): tracks read out of the file with mp4box
+    if (!(at && at.length > 1) && mp4Tracks.length > 1) {
+      $('pl-audio').style.display = '';
+      let html = '<div class="aud-item' + (!extActive ? ' on' : '') + '" data-orig="1">' +
+                 (!extActive ? '✓ ' : '') + 'Original (default)</div>';
+      mp4Tracks.forEach((t, i) => {
+        html += '<div class="aud-item" data-ext="' + i + '">' + escapeHtml(t.label) +
+                (t.playable ? '' : ' <span style="color:var(--muted)">· not supported here</span>') + '</div>';
+      });
+      menu.innerHTML = '<div class="aud-head">Audio language</div>' + html;
+      menu.querySelectorAll('.aud-item').forEach(el => {
+        el.onclick = () => {
+          menu.classList.remove('open');
+          if (el.dataset.orig) useOriginalTrack(); else useExtractedTrack(parseInt(el.dataset.ext, 10));
+        };
+      });
+      return;
+    }
+
+    // Path A (Safari): the browser exposes the tracks natively
+    if (!at || at.length < 2) {
+      $('pl-audio').style.display = (currentFile && !mp4Scanned) ? '' : 'none';
+      if (mp4Scanned && mp4Tracks.length <= 1) {
+        menu.innerHTML = '<div class="aud-head">Audio language</div><div class="aud-item">Only one audio track in this file</div>';
+      }
+      return;
+    }
+    $('pl-audio').style.display = '';
+    let active = -1;
+    for (let i = 0; i < at.length; i++) if (at[i].enabled) active = i;
+    let pref = ''; try { pref = localStorage.getItem('wt_audio_lang') || ''; } catch (e) {}
+    if (pref) {                                   // re-apply your preferred language automatically
+      for (let i = 0; i < at.length; i++) {
+        const c = (at[i].language || '').toLowerCase().split('-')[0];
+        if (c && c === pref && i !== active) { setAudioTrack(i, false); active = i; break; }
+      }
+    }
+    let html = '';
+    for (let i = 0; i < at.length; i++) {
+      html += '<div class="aud-item' + (i === active ? ' on' : '') + '" data-aud="' + i + '">' +
+              (i === active ? '✓ ' : '') + escapeHtml(trackLabel(at[i], i)) + '</div>';
+    }
+    menu.innerHTML = '<div class="aud-head">Audio language</div>' + html;
+    menu.querySelectorAll('.aud-item').forEach(el => {
+      el.onclick = () => { setAudioTrack(parseInt(el.dataset.aud, 10), true); menu.classList.remove('open'); };
+    });
+  }
+  // ---- Chrome/Android/Windows path: read the tracks out of the file itself (mp4box.js) ----
+  const altAudio = $('alt-audio');
+  let mp4Tracks = [], mp4Scanned = false, extActive = false, extBusy = false;
+
+  function resetAltAudio() {
+    mp4Tracks = []; mp4Scanned = false; extActive = false;
+    try { altAudio.pause(); altAudio.removeAttribute('src'); altAudio.load(); } catch (e) {}
+    movie.muted = false;
+    refreshAudioTracks();
+  }
+  function loadMp4Box() {
+    return new Promise((res, rej) => {
+      if (window.MP4Box) return res(window.MP4Box);
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/mp4box@0.5.2/dist/mp4box.all.min.js';
+      s.onload = () => res(window.MP4Box);
+      s.onerror = () => rej(new Error('Could not load the audio-track reader'));
+      document.head.appendChild(s);
+    });
+  }
+  // feed the file to mp4box in chunks; stop early once the header (moov) is parsed
+  function scanMp4Tracks(file) {
+    return loadMp4Box().then(MP4Box => new Promise((resolve, reject) => {
+      const mp4 = MP4Box.createFile();
+      let done = false;
+      mp4.onError = e => { if (!done) { done = true; reject(new Error(String(e))); } };
+      mp4.onReady = info => { done = true; resolve({ mp4, info }); };
+      const CHUNK = 4 * 1024 * 1024;
+      let offset = 0;
+      const pump = () => {
+        if (done) return;
+        if (offset >= file.size) { if (!done) reject(new Error('No track info found in this file')); return; }
+        file.slice(offset, Math.min(offset + CHUNK, file.size)).arrayBuffer().then(buf => {
+          if (done) return;
+          buf.fileStart = offset;
+          try { mp4.appendBuffer(buf); } catch (e) { reject(e); return; }
+          offset += CHUNK;
+          pump();
+        }).catch(reject);
+      };
+      pump();
+    }));
+  }
+  const PLAYABLE = /mp4a|opus|vorbis|flac|mp3/i;   // what browsers can actually decode
+  async function ensureMp4Scan() {
+    if (mp4Scanned || !currentFile) return;
+    mp4Scanned = true;
+    if (!/\.(mp4|m4v|mov)$/i.test(currentFile.name)) return;   // mp4box only understands MP4
+    try {
+      const { info } = await scanMp4Tracks(currentFile);
+      mp4Tracks = (info.audioTracks || []).map(t => ({
+        id: t.id, lang: t.language, codec: t.codec,
+        label: langName(t.language) || ('Track ' + t.id),
+        playable: PLAYABLE.test(t.codec || '')
+      }));
+    } catch (e) { mp4Tracks = []; }
+  }
+  // extract one audio track into a playable blob and run it in sync with the muted video
+  async function useExtractedTrack(idx) {
+    const info = mp4Tracks[idx];
+    if (!info || extBusy) return;
+    if (!info.playable) {
+      toast('This browser can\'t decode ' + (info.codec || 'that track') + ' — it works on iPhone/Safari', 6000);
+      return;
+    }
+    extBusy = true;
+    toast('Preparing ' + info.label + ' audio… this can take a moment', 5000);
+    try {
+      const MP4Box = await loadMp4Box();
+      const mp4 = MP4Box.createFile();
+      const parts = [];
+      await new Promise((resolve, reject) => {
+        mp4.onError = e => reject(new Error(String(e)));
+        mp4.onReady = () => {
+          mp4.setSegmentOptions(info.id, null, { nbSamples: 1000 });
+          const init = mp4.initializeSegmentation();
+          init.forEach(s => parts.push(s.buffer));
+          mp4.start();
+        };
+        mp4.onSegment = (id, user, buffer) => { parts.push(buffer); };
+        const CHUNK = 4 * 1024 * 1024;
+        let offset = 0;
+        const pump = () => {
+          if (offset >= currentFile.size) { try { mp4.flush(); } catch (e) {} resolve(); return; }
+          currentFile.slice(offset, Math.min(offset + CHUNK, currentFile.size)).arrayBuffer().then(buf => {
+            buf.fileStart = offset;
+            try { mp4.appendBuffer(buf); } catch (e) { reject(e); return; }
+            offset += CHUNK;
+            setTimeout(pump, 0);          // yield so the UI stays responsive
+          }).catch(reject);
+        };
+        pump();
+      });
+      const blob = new Blob(parts, { type: 'audio/mp4' });
+      altAudio.src = URL.createObjectURL(blob);
+      altAudio.currentTime = movie.currentTime;
+      altAudio.volume = mediaVol;
+      movie.muted = true;                 // silence the file's built-in track
+      extActive = true;
+      if (!movie.paused) altAudio.play().catch(() => {});
+      try { localStorage.setItem('wt_audio_lang', (info.lang || '').toLowerCase().split('-')[0]); } catch (e) {}
+      toast('Audio: ' + info.label, 2500);
+    } catch (e) {
+      toast('Could not switch audio: ' + e.message, 5000);
+    }
+    extBusy = false;
+    refreshAudioTracks();
+  }
+  function useOriginalTrack() {
+    extActive = false;
+    try { altAudio.pause(); altAudio.removeAttribute('src'); altAudio.load(); } catch (e) {}
+    movie.muted = false;
+    refreshAudioTracks();
+  }
+  // keep the extracted audio locked to the video
+  function syncAltAudio() {
+    if (!extActive) return;
+    altAudio.volume = mediaVol;
+    if (Math.abs(altAudio.currentTime - movie.currentTime) > 0.25) altAudio.currentTime = movie.currentTime;
+    if (!movie.paused && altAudio.paused) altAudio.play().catch(() => {});
+    if (movie.paused && !altAudio.paused) altAudio.pause();
+  }
+  movie.addEventListener('play', syncAltAudio);
+  movie.addEventListener('pause', syncAltAudio);
+  movie.addEventListener('seeked', syncAltAudio);
+  movie.addEventListener('ratechange', () => { if (extActive) altAudio.playbackRate = movie.playbackRate; });
+  setInterval(syncAltAudio, 1000);
+
+  $('pl-audio').onclick = async e => {
+    e.stopPropagation();
+    const menu = $('audio-menu');
+    if (menu.classList.contains('open')) { menu.classList.remove('open'); return; }
+    if (!(movie.audioTracks && movie.audioTracks.length > 1)) { await ensureMp4Scan(); }
+    refreshAudioTracks();
+    menu.classList.add('open');
+  };
+  movie.addEventListener('loadedmetadata', () => setTimeout(refreshAudioTracks, 300));
+  if (movie.audioTracks && movie.audioTracks.addEventListener) {
+    movie.audioTracks.addEventListener('addtrack', () => setTimeout(refreshAudioTracks, 100));
+    movie.audioTracks.addEventListener('change', refreshAudioTracks);
+  }
+
   // ---- series mode ----
   let episodes = [], epIndex = -1, seriesMode = false, remoteEpNames = [];
 
@@ -1947,6 +2185,8 @@
     ytShow(false);
     receivingStream = false; movie.srcObject = null;
     movie.src = URL.createObjectURL(ep.file);
+    currentFile = ep.file;
+    resetAltAudio();
     resumeKey = ep.key;
     $('pl-title').textContent = ep.name;
     $('movie-hint').innerHTML = 'Series mode — episode <b>' + (i + 1) + '</b> of ' + episodes.length;
@@ -2404,6 +2644,7 @@
     fsStage.appendChild($('chat-panel'));
     fsStage.appendChild($('react-pop'));
     fsStage.appendChild($('sound-pop'));
+    fsStage.appendChild($('audio-menu'));
     updateFsToggle();
     updateFsSeek();
     reqFs(fsStage);
@@ -2440,6 +2681,7 @@
     document.body.appendChild($('chat-panel'));
     document.body.appendChild($('react-pop'));
     document.body.appendChild($('sound-pop'));
+    document.body.appendChild($('audio-menu'));
     fsMode = null;
   }
 
@@ -2515,6 +2757,7 @@
     document.body.appendChild($('chat-panel'));
     document.body.appendChild($('react-pop'));
     document.body.appendChild($('sound-pop'));
+    document.body.appendChild($('audio-menu'));
   }
   $('yt-exit').onclick = ytExitAll;
   document.addEventListener('keydown', e => {
