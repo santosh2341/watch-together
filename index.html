@@ -181,8 +181,14 @@
     display: flex; align-items: center; justify-content: center;
     font-size: 46px; background: var(--accent);
     box-shadow: 0 4px 16px rgba(0,0,0,.45);
-    user-select: none;
+    user-select: none; cursor: pointer; transition: box-shadow .15s ease;
   }
+  #avatar-preview:hover { box-shadow: 0 0 0 3px rgba(255,255,255,.28), 0 4px 16px rgba(0,0,0,.45); }
+  #avatar-hint { font-size: 11px; color: var(--muted); margin-top: -6px; }
+  /* the character grid + colours stay tucked away until you tap the icon */
+  #picker-wrap { display: none; flex-direction: column; align-items: center; gap: 12px; width: 100%; }
+  #profile-box.open #picker-wrap { display: flex; }
+  #profile-box.open #avatar-hint { display: none; }
   #name-input {
     background: var(--bg); border: 1px solid #2a3040; border-radius: 10px;
     padding: 12px; font-size: 16px; color: var(--text); width: 100%; text-align: center;
@@ -696,13 +702,16 @@
 
   <!-- NAME + AVATAR -->
   <div id="profile-box">
-    <div id="avatar-preview"><span id="avatar-emoji">🍿</span></div>
-    <button type="button" class="btn secondary" id="btn-random" style="max-width:220px">🎲 Surprise me</button>
+    <div id="avatar-preview" title="Tap to change your character"><span id="avatar-emoji">🍿</span></div>
+    <div id="avatar-hint">Tap the icon to change it</div>
     <input type="text" id="name-input" placeholder="Enter your name" maxlength="20" autocomplete="off">
-    <div class="pick-label">Choose your character</div>
-    <div id="avatar-grid"></div>
-    <div class="pick-label">Background colour</div>
-    <div id="color-row"></div>
+    <div id="picker-wrap">
+      <button type="button" class="btn secondary" id="btn-random" style="max-width:220px">🎲 Surprise me</button>
+      <div class="pick-label">Choose your character</div>
+      <div id="avatar-grid"></div>
+      <div class="pick-label">Background colour</div>
+      <div id="color-row"></div>
+    </div>
   </div>
 
   <div id="cap-row">
@@ -1011,6 +1020,7 @@
   });
   nameInput.value = profile.name;
   nameInput.oninput = () => { profile.name = nameInput.value.trim(); };
+  $('avatar-preview').onclick = () => $('profile-box').classList.toggle('open');   // reveal the picker
   $('btn-random').onclick = () => {
     profile.emoji = AVATARS[Math.floor(Math.random() * AVATARS.length)];
     profile.color = COLORS[Math.floor(Math.random() * COLORS.length)];
@@ -1053,6 +1063,7 @@
 
   function openEdit() {
     $('edit-body').appendChild(profileBox);   // reuse the same picker inside the modal
+    profileBox.classList.add('open');         // in the editor, show the picker straight away
     nameInput.value = (profile.name && profile.name !== 'Guest') ? profile.name : '';
     refreshAvatarUI();
     $('edit-modal').style.display = 'flex';
@@ -1063,7 +1074,8 @@
       updateTopChip();
       broadcast({ type: 'profile', name: profile.name, emoji: profile.emoji, color: profile.color });
     }
-    $('setup').insertBefore(profileBox, $('cap-row'));  // return the picker to the setup screen
+    profileBox.classList.remove('open');                 // collapse it again for the setup screen
+    $('setup').insertBefore(profileBox, $('cap-row'));   // return the picker to the setup screen
     $('edit-modal').style.display = 'none';
   }
   $('tp-avatar').onclick = openEdit;
