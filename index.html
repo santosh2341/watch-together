@@ -101,6 +101,22 @@
   #edit-actions { display: flex; gap: 10px; width: 100%; }
   #edit-actions .btn { flex: 1; margin: 0; max-width: none; }
 
+  .chat-sep {
+    text-align: center; font-size: 11px; color: var(--muted);
+    padding: 8px 4px; border-bottom: 1px solid #2a3040; margin-bottom: 6px;
+  }
+
+  /* ---- Saved playlist ---- */
+  #pl-saved { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
+  #pl-saved .pl-lbl { font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); }
+  #pl-saved .pl-chip {
+    background: #1b1f27; border: 1px solid #2a3040; color: var(--fg);
+    border-radius: 999px; padding: 5px 11px; font-size: 12px; cursor: pointer;
+    font-family: inherit; max-width: 210px; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; display: block;
+  }
+  #pl-saved .pl-chip:hover { border-color: var(--accent); }
+
   /* ---- Friends + search ---- */
   #hdr-search { position: relative; flex: 1; max-width: 400px; margin: 0 10px; display: none; }
   body.has-account:not(.in-room) #hdr-search { display: block; }
@@ -977,6 +993,7 @@
       <button class="btn secondary" id="btn-yt"><svg class="ic" viewBox="0 0 24 24"><path d="M22.5 7a2.6 2.6 0 0 0-1.8-1.8C19 4.7 12 4.7 12 4.7s-7 0-8.7.5A2.6 2.6 0 0 0 1.5 7 27 27 0 0 0 1 12a27 27 0 0 0 .5 5 2.6 2.6 0 0 0 1.8 1.8c1.7.5 8.7.5 8.7.5s7 0 8.7-.5A2.6 2.6 0 0 0 22.5 17 27 27 0 0 0 23 12a27 27 0 0 0-.5-5z"/><polygon points="9.8 15.3 15.6 12 9.8 8.7 9.8 15.3" fill="currentColor" stroke="none"/></svg> Watch</button>
       <button class="btn secondary" id="btn-yt-audio" style="display:none">🎵 Audio</button>
     </div>
+    <div id="pl-saved" style="display:none"></div>
     <div class="hint" id="movie-hint">Choose a video file, then either <b>Stream to room</b> (only you need the file) or have everyone pick the <b>same file</b> for perfect sync.</div>
     <div class="hint" id="host-status" style="display:none"></div>
     <div id="dl-card">
@@ -1408,7 +1425,11 @@
   }
   $('chat-x').title = 'Close';
   function addChatMsg(emoji, name, text, me, fromHistory) {
-    if (!fromHistory) saveChatLog({ emoji, name, text, me });
+    if (!fromHistory) {
+      saveChatLog({ emoji, name, text, me });
+      // in a party room, keep our own messages on the server so they survive the session
+      if (me) { try { saveRoomMessage(text); } catch (e) {} }
+    }
     const d = document.createElement('div');
     d.className = 'chat-msg' + (me ? ' me' : '');
     const who = document.createElement('span'); who.className = 'who';
@@ -1673,12 +1694,11 @@
   $('dl-pause').onclick = () => { const id = $('dl-card').dataset.id; if (id) dlPause(id); };
 
   // ---------- HOST ----------
-  $('btn-create').onclick = async () => {
+  async function hostRoom(code, cap) {
     saveProfile();
     await getCamera();
     isHost = true;
-    capacity = parseInt($('cap-select').value, 10) || 2;
-    const code = rand(5);
+    capacity = cap || parseInt($('cap-select').value, 10) || 2;
     peer = newPeer('wt2-' + code);
     peer.on('open', () => {
       $('room-code').textContent = code;
@@ -1690,7 +1710,8 @@
       $('wait-hint').textContent = 'Waiting for others to join… (room size: ' + capacity + ')';
       statusEl.textContent = 'waiting';
     });
-  };
+  }
+  $('btn-create').onclick = () => hostRoom(rand(5));
 
   $('btn-share').onclick = () => {
     const code = $('room-code').textContent;
@@ -1700,9 +1721,7 @@
   };
 
   // ---------- GUEST ----------
-  $('btn-join').onclick = async () => {
-    const code = $('join-code').value.trim().toUpperCase();
-    if (code.length < 4) { $('setup-msg').textContent = 'Enter the room code first.'; return; }
+  async function guestJoin(code) {
     saveProfile();
     await getCamera();
     isHost = false;
@@ -1714,6 +1733,11 @@
       connectTo(hostId);
       callPeer(hostId);
     });
+  }
+  $('btn-join').onclick = () => {
+    const code = $('join-code').value.trim().toUpperCase();
+    if (code.length < 4) { $('setup-msg').textContent = 'Enter the room code first.'; return; }
+    guestJoin(code);
   };
 
   function connectTo(id) {
@@ -2798,8 +2822,15 @@
     ytApiLoad(); ytCreateOrLoad(vid, t0);
     broadcast({ type: 'yt-load', vid, t: t0 });
     $('movie-hint').textContent = 'Watching a YouTube video together — playback stays in sync.';
+    try { savePlaylistItem('https://youtu.be/' + vid, $('yt-url').value.trim().slice(0, 80)); } catch (e) {}
   };
   $('yt-url').addEventListener('keydown', e => { if (e.key === 'Enter') $('btn-yt').onclick(); });
+  $('pl-saved').addEventListener('click', e => {
+    const chip = e.target.closest('.pl-chip');
+    if (!chip) return;
+    $('yt-url').value = chip.dataset.url;
+    $('btn-yt').onclick();
+  });
   setInterval(() => { if (ytActive && isHost && ytPlayer) broadcast({ type: 'yt', a: 'sync', t: ytTime(), playing: !ytPaused() }); }, 4000);
 
   // ---------- MOVIE CAPTURE (with iPhone/Safari fallback) ----------
@@ -3387,7 +3418,9 @@
 
   // ---------- FRIENDS ----------
   let friendRows = [];
+  let inviteRows = [];
   let frChannel = null;
+  let partyRoomId = null;    // the database room we're in, when started from a friend
 
   function frEsc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
@@ -3407,6 +3440,17 @@
     const accepted = friendRows.filter(r => r.status === 'accepted');
     let html = '';
 
+    if (inviteRows.length) {
+      html += '<div class="fp-label">Invites</div>';
+      html += inviteRows.map(i =>
+        '<div class="fr-row" data-invite="' + frEsc(i.invite_id) + '" data-room="' + frEsc(i.room_id) + '">' +
+        '<div class="fr-av" style="background:' + frEsc(i.from_color || '#4f8cff') + '">' + frEsc(i.from_emoji || '🍿') + '</div>' +
+        '<div class="fr-meta"><div class="fr-name">' + frEsc(i.from_name) + '</div>' +
+        '<div class="fr-uid">wants to watch</div></div>' +
+        '<button class="fr-btn" data-act="join">Join</button>' +
+        '<button class="fr-btn no" data-act="nojoin">&times;</button></div>').join('');
+    }
+
     if (incoming.length) {
       html += '<div class="fp-label">Requests</div>';
       html += incoming.map(r => frRow(r,
@@ -3416,7 +3460,9 @@
 
     html += '<div class="fp-label">Friends</div>';
     html += accepted.length
-      ? accepted.map(r => frRow(r, '<button class="fr-btn ghost" data-act="remove" title="Remove friend">&times;</button>')).join('')
+      ? accepted.map(r => frRow(r,
+          '<button class="fr-btn" data-act="party" title="Start watching together">Watch</button>' +
+          '<button class="fr-btn ghost" data-act="remove" title="Remove friend">&times;</button>')).join('')
       : '<div class="fp-empty">No friends yet. Search up top to add someone.</div>';
 
     if (sent.length) {
@@ -3428,15 +3474,16 @@
 
     $('fp-body').innerHTML = html;
     const badge = $('fp-badge');
-    badge.textContent = incoming.length;
-    badge.classList.toggle('on', incoming.length > 0);
+    const n = incoming.length + inviteRows.length;
+    badge.textContent = n;
+    badge.classList.toggle('on', n > 0);
   }
 
   async function loadFriends() {
     if (!supa || !authUser) return;
-    const { data, error } = await supa.rpc('my_friends');
-    if (error) return;
-    friendRows = data || [];
+    const [f, i] = await Promise.all([supa.rpc('my_friends'), supa.rpc('my_invites')]);
+    if (!f.error) friendRows = f.data || [];
+    if (!i.error) inviteRows = i.data || [];
     renderFriends();
   }
 
@@ -3444,7 +3491,91 @@
     if (!supa || !authUser || frChannel) return;
     frChannel = supa.channel('friends-' + authUser.id)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'friendships' }, loadFriends)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'room_invites' }, loadFriends)
       .subscribe();
+  }
+
+  // ---------- PARTY ROOMS ----------
+  async function startParty(friendId, btn) {
+    if (!supa || !authUser) return;
+    if (btn) { btn.disabled = true; btn.textContent = '…'; }
+    const { data, error } = await supa.rpc('create_party', { friend_ids: [friendId], party_name: null });
+    if (error || !data || !data.length) {
+      if (btn) { btn.disabled = false; btn.textContent = 'Watch'; }
+      toast('Could not start the party', 3000);
+      return;
+    }
+    partyRoomId = data[0].out_room_id;
+    closeFriendsPanel();
+    toast('Invite sent — setting up the room', 3000);
+    await hostRoom(data[0].out_code, 2);
+    loadRoomChat();
+    loadPlaylist();
+  }
+
+  async function joinParty(inviteId, roomId, btn) {
+    if (!supa || !authUser) return;
+    if (btn) { btn.disabled = true; btn.textContent = '…'; }
+    const { data, error } = await supa.rpc('accept_invite', { inv: inviteId });
+    if (error || !data) {
+      if (btn) { btn.disabled = false; btn.textContent = 'Join'; }
+      toast('That invite is no longer valid', 3000);
+      loadFriends();
+      return;
+    }
+    partyRoomId = roomId;
+    closeFriendsPanel();
+    await guestJoin(data);
+    loadRoomChat();
+    loadPlaylist();
+  }
+
+  // saved chat for this room
+  async function loadRoomChat() {
+    if (!supa || !partyRoomId) return;
+    const { data, error } = await supa.rpc('room_history', { r: partyRoomId });
+    if (error || !data || !data.length) return;
+    chatMsgs.innerHTML = '';
+    data.slice().reverse().forEach(m =>
+      addChatMsg(m.avatar_emoji || '🍿', m.username, m.body, m.mine, true));
+    const sep = document.createElement('div');
+    sep.className = 'chat-sep';
+    sep.textContent = 'Earlier messages in this room';
+    chatMsgs.appendChild(sep);
+    chatMsgs.scrollTop = chatMsgs.scrollHeight;
+  }
+
+  function saveRoomMessage(text) {
+    if (!supa || !authUser || !partyRoomId) return;
+    supa.from('messages')
+      .insert({ room_id: partyRoomId, user_id: authUser.id, body: text })
+      .then(() => {}, () => {});
+  }
+
+  // saved playlist for this room
+  async function loadPlaylist() {
+    if (!supa || !partyRoomId) return;
+    const { data, error } = await supa.from('playlist_items')
+      .select('id,url,title,kind').eq('room_id', partyRoomId)
+      .order('created_at', { ascending: false }).limit(12);
+    const box = $('pl-saved');
+    if (!box) return;
+    if (error || !data || !data.length) { box.innerHTML = ''; box.style.display = 'none'; return; }
+    box.innerHTML = '<span class="pl-lbl">Saved:</span>' + data.map(it =>
+      '<button class="pl-chip" data-url="' + frEsc(it.url) + '">' + frEsc(it.title || it.url) + '</button>').join('');
+    box.style.display = 'flex';
+  }
+
+  function savePlaylistItem(url, title) {
+    if (!supa || !authUser || !partyRoomId) return;
+    supa.from('playlist_items')
+      .insert({ room_id: partyRoomId, added_by: authUser.id, kind: 'youtube', url, title })
+      .then(() => loadPlaylist(), () => {});
+  }
+
+  function closeFriendsPanel() {
+    $('friends-panel').classList.remove('open');
+    $('fp-backdrop').classList.remove('on');
   }
 
   async function sendFriendRequest(id, btn) {
@@ -3475,8 +3606,18 @@
     $('fp-body').addEventListener('click', async (e) => {
       const btn = e.target.closest('[data-act]');
       if (!btn) return;
-      const rowId = btn.closest('.fr-row').dataset.row;
+      const row = btn.closest('.fr-row');
       const act = btn.dataset.act;
+
+      if (act === 'party')  return startParty(row.dataset.uid, btn);
+      if (act === 'join')   return joinParty(row.dataset.invite, row.dataset.room, btn);
+      if (act === 'nojoin') {
+        btn.disabled = true;
+        await supa.rpc('decline_invite', { inv: row.dataset.invite });
+        return loadFriends();
+      }
+
+      const rowId = row.dataset.row;
       btn.disabled = true;
       if (act === 'accept')       await supa.from('friendships').update({ status: 'accepted' }).eq('id', rowId);
       else if (act === 'decline') await supa.from('friendships').update({ status: 'declined' }).eq('id', rowId);
