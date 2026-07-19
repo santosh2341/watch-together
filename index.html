@@ -156,8 +156,18 @@
   body.in-call #call-screen { display: block; }
 
   #cs-remote { position: absolute; inset: 0; display: grid; place-items: center; overflow: hidden; }
-  #cs-remote video { width: 100%; height: 100%; object-fit: cover; display: none; }
-  #cs-remote.live video { display: block; }
+  /* the whole frame is always visible — never crop the person out */
+  #cs-remote-vid {
+    position: relative; z-index: 1; display: none;
+    width: 100%; height: 100%; object-fit: contain;
+  }
+  /* blurred copy fills the empty space either side */
+  #cs-bg {
+    position: absolute; inset: 0; z-index: 0; display: none;
+    width: 100%; height: 100%; object-fit: cover;
+    filter: blur(30px) brightness(.45); transform: scale(1.12);
+  }
+  #cs-remote.live #cs-remote-vid, #cs-remote.live #cs-bg { display: block; }
   #cs-remote-av {
     width: 132px; height: 132px; border-radius: 50%; display: grid; place-items: center;
     font-size: 66px; background: #4f8cff;
@@ -179,7 +189,8 @@
   body.cs-audio #cs-self { display: none; }
   /* when the big tile is mine, un-mirror the small one (it is my friend) */
   #cs-self.swapped video { transform: none; }
-  #cs-remote.swapped video { transform: scaleX(-1); }
+  #cs-remote.swapped #cs-remote-vid { transform: scaleX(-1); }
+  #cs-remote.swapped #cs-bg { transform: scale(1.12) scaleX(-1); }
 
   #cs-top { position: absolute; top: 0; left: 0; right: 0; padding: 22px 16px; text-align: center; z-index: 2;
     background: linear-gradient(rgba(0,0,0,.55), rgba(0,0,0,0)); pointer-events: none; }
@@ -961,6 +972,7 @@
 <!-- CALL SCREEN -->
 <div id="call-screen">
   <div id="cs-remote">
+    <video id="cs-bg" autoplay playsinline muted></video>
     <video id="cs-remote-vid" autoplay playsinline></video>
     <div id="cs-remote-av"></div>
   </div>
@@ -3867,6 +3879,8 @@
 
     if (remoteVid.srcObject !== bigStream) remoteVid.srcObject = bigStream;
     if (selfVid.srcObject !== smallStream) selfVid.srcObject = smallStream;
+    const bg = $('cs-bg');
+    if (bg.srcObject !== bigStream) bg.srcObject = bigStream;
 
     const bigHasVideo   = !audio && !!(bigStream && bigStream.getVideoTracks().length);
     const smallHasVideo = !audio && !!(smallStream && smallStream.getVideoTracks().length);
