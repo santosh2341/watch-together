@@ -120,14 +120,19 @@
   }
 
   /* ---- Chat with a friend ---- */
-  #chat-view { display: none; flex: 1; flex-direction: column; min-height: 0; }
+  /* fixed to the viewport: only the message list scrolls, never the composer */
+  #chat-view {
+    display: none; position: fixed; inset: 0; z-index: 50;
+    flex-direction: column; min-height: 0; background: var(--bg);
+  }
   body.chatting #chat-view { display: flex; }
   body.chatting #setup { display: none !important; }
   /* the app bar belongs to the main screen only */
   body.chatting header { display: none !important; }
   #cv-head {
-    display: flex; align-items: center; gap: 9px; padding: 9px 12px;
-    background: var(--card); border-bottom: 1px solid #23272f; flex: none;
+    display: flex; align-items: center; gap: 9px; flex: none;
+    padding: calc(9px + env(safe-area-inset-top, 0px)) 12px 9px;
+    background: var(--card); border-bottom: 1px solid #23272f;
   }
   #cv-back { background: none; border: none; color: var(--fg); cursor: pointer; padding: 4px; flex: none; }
   #cv-head .fr-av { width: 36px; height: 36px; font-size: 18px; }
@@ -147,7 +152,11 @@
     border-bottom-left-radius: 14px; border-bottom-right-radius: 4px; }
   .cv-time { font-size: 10px; opacity: .6; margin-left: 8px; }
   .cv-empty { color: var(--muted); font-size: 13px; text-align: center; margin: auto; padding: 20px; }
-  #cv-form { display: flex; gap: 8px; padding: 10px 12px; border-top: 1px solid #23272f; flex: none; }
+  #cv-form {
+    display: flex; gap: 8px; flex: none; align-items: center;
+    padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px));
+    border-top: 1px solid #23272f; background: var(--card);
+  }
   #cv-input {
     flex: 1; min-width: 0; max-width: none; margin: 0; background: #14171d;
     border: 1px solid #2a3040; border-radius: 999px; padding: 11px 15px; color: var(--fg); font-size: 14px;
@@ -307,7 +316,8 @@
   .cs-spk-note { font-size: 12px; color: var(--muted); padding: 8px 11px; line-height: 1.45; }
 
   @media (min-width: 900px) {
-    body.has-account:not(.in-room) #chat-view { margin-left: 250px; }
+    /* sit beside the docked friends panel rather than under it */
+    body.has-account:not(.in-room) #chat-view { left: 250px; }
   }
 
   /* ---- Friends-first setup ---- */
@@ -4085,7 +4095,48 @@
     }
   }
 
-  function dingMessage() { beep(880, 0, 0.10, 0.15); beep(1180, 0.10, 0.14, 0.13); }
+  // Message tones in the spirit of iMessage — synthesised here, not Apple's audio.
+  // Sent: a short airy whoosh sweeping upward. Received: a soft rising two-note bloop.
+  function soundSent() {
+    const c = ctx();
+    if (!c) return;
+    const t = c.currentTime, dur = 0.28;
+    const buf = c.createBuffer(1, Math.max(1, Math.ceil(c.sampleRate * dur)), c.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) {
+      const p = i / d.length;
+      d[i] = (Math.random() * 2 - 1) * (1 - p);      // noise that fades as it rises
+    }
+    const src = c.createBufferSource(); src.buffer = buf;
+    const bp = c.createBiquadFilter();
+    bp.type = 'bandpass'; bp.Q.value = 7;
+    bp.frequency.setValueAtTime(420, t);
+    bp.frequency.exponentialRampToValueAtTime(2600, t + dur);
+    const g = c.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.14, t + 0.06);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(bp); bp.connect(g); g.connect(c.destination);
+    src.start(t); src.stop(t + dur);   // self-stopping; not tracked, so a call cannot cut it short
+  }
+
+  function soundReceived() {
+    const c = ctx();
+    if (!c) return;
+    const t = c.currentTime;
+    const note = (freq, at, dur, vol) => {
+      const o = c.createOscillator(), g = c.createGain();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(freq, t + at);
+      g.gain.setValueAtTime(0.0001, t + at);
+      g.gain.exponentialRampToValueAtTime(vol, t + at + 0.014);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + at + dur);
+      o.connect(g); g.connect(c.destination);
+      o.start(t + at); o.stop(t + at + dur + 0.02);
+    };
+    note(1046.50, 0,     0.17, 0.17);   // C6
+    note(1567.98, 0.085, 0.24, 0.13);   // G6
+  }
 
   // ---------- NOTIFICATIONS ----------
   function canNotify() {
@@ -4385,6 +4436,7 @@
     placeholder.remove();
     if (error) { toast('Message not sent', 3000); return; }
     cvAppend(caption || '', true, new Date().toISOString(), kind, path, meta);
+    soundSent();
   }
 
   async function openFriendChat(friend) {
@@ -4426,7 +4478,7 @@
           const row = p.new;
           if (!row || row.user_id === authUser.id) return;   // ours is already on screen
           cvAppend(row.body, false, row.created_at, row.kind, row.url, row.meta);
-          dingMessage();
+          soundReceived();
           notify(cvFriend ? cvFriend.username : 'New message',
                  row.kind === 'text' ? (row.body || '') :
                  row.kind === 'voice' ? 'Voice message' : 'Sent an attachment', 'msg');
@@ -4563,6 +4615,7 @@
       if (!text || !cvRoomId) return;
       $('cv-input').value = '';
       cvAppend(text, true, new Date().toISOString());
+      soundSent();
       const { error } = await supa.from('messages')
         .insert({ room_id: cvRoomId, user_id: authUser.id, body: text, kind: 'text' });
       if (error) toast('Message not sent', 2500);
