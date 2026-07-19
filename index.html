@@ -179,6 +179,25 @@
   #fp-close { background: none; border: none; color: var(--muted); font-size: 22px; line-height: 1; cursor: pointer; }
   .fp-label { font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); padding: 12px 6px 3px; }
   .fp-empty { font-size: 12px; color: var(--muted); padding: 4px 6px 8px; }
+  #friends-panel { padding-bottom: 0; }
+  #fp-actions { padding: 2px 6px 6px; }
+  #fp-new {
+    width: 100%; background: #1b1f27; border: 1px solid #2a3040; color: var(--fg);
+    border-radius: 9px; padding: 9px; font-size: 13px; font-weight: 600;
+    cursor: pointer; font-family: inherit;
+  }
+  #fp-new:hover { border-color: var(--accent); }
+  #fp-body { flex: 1; }
+  #fp-bar {
+    position: sticky; bottom: 0; margin-top: auto; gap: 8px; display: none;
+    background: #0f1218; border-top: 1px solid #23272f; padding: 10px 6px;
+  }
+  #fp-bar.on { display: flex; }
+  #fp-bar .fr-btn { flex: 1; padding: 9px; }
+  .fr-check { width: 17px; height: 17px; accent-color: var(--accent); flex: none; pointer-events: none; }
+  .fr-row.pick { cursor: pointer; border-radius: 9px; }
+  .fr-row.pick:hover { background: #171b22; }
+  .fr-row.pick.on { background: #1b2536; }
   #fp-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 89; display: none; }
   #fp-backdrop.on { display: block; }
   body.in-room #friends-panel, body.in-room #fp-backdrop { display: none !important; }
@@ -833,7 +852,12 @@
     <h3>Friends</h3>
     <button id="fp-close" title="Close">&times;</button>
   </div>
+  <div id="fp-actions"><button id="fp-new">+ New party room</button></div>
   <div id="fp-body"></div>
+  <div id="fp-bar">
+    <button class="fr-btn ghost" id="fp-cancel">Cancel</button>
+    <button class="fr-btn" id="fp-start">Start party</button>
+  </div>
 </aside>
 
 <!-- AUTH -->
@@ -3440,14 +3464,17 @@
   let inviteRows = [];
   let frChannel = null;
   let partyRoomId = null;    // the database room we're in, when started from a friend
+  let partySelect = false;   // choosing several friends for a party
+  const partyPicked = new Set();
 
   function frEsc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
       ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
   }
 
-  function frRow(r, buttons) {
-    return '<div class="fr-row" data-row="' + frEsc(r.row_id) + '" data-uid="' + frEsc(r.friend_id) + '">' +
+  function frRow(r, buttons, extraClass) {
+    return '<div class="fr-row' + (extraClass ? ' ' + extraClass : '') +
+      '" data-row="' + frEsc(r.row_id) + '" data-uid="' + frEsc(r.friend_id) + '">' +
       '<div class="fr-av" style="background:' + frEsc(r.avatar_color || '#4f8cff') + '">' + frEsc(r.avatar_emoji || '🍿') + '</div>' +
       '<div class="fr-meta"><div class="fr-name">' + frEsc(r.username) + '</div>' +
       '<div class="fr-uid">#' + frEsc(r.uid6) + '</div></div>' + buttons + '</div>';
@@ -3458,6 +3485,23 @@
     const sent     = friendRows.filter(r => r.status === 'pending' && r.direction === 'out');
     const accepted = friendRows.filter(r => r.status === 'accepted');
     let html = '';
+
+    // --- picking people for a party ---
+    if (partySelect) {
+      html += '<div class="fp-label">Who is watching?</div>';
+      html += accepted.length
+        ? accepted.map(r => {
+            const on = partyPicked.has(r.friend_id);
+            return frRow(r, '<input type="checkbox" class="fr-check"' + (on ? ' checked' : '') + '>',
+                         'pick' + (on ? ' on' : ''));
+          }).join('')
+        : '<div class="fp-empty">Add a friend first — search at the top.</div>';
+      $('fp-body').innerHTML = html;
+      $('fp-start').textContent = partyPicked.size
+        ? 'Start party (' + partyPicked.size + ')' : 'Start party';
+      $('fp-start').disabled = partyPicked.size === 0;
+      return;
+    }
 
     if (inviteRows.length) {
       html += '<div class="fp-label">Invites</div>';
@@ -3496,7 +3540,7 @@
     const cta = $('cta-text');
     if (cta) {
       cta.innerHTML = accepted.length
-        ? 'Pick a friend on the left and press <b>Watch</b> to start a room together.'
+        ? 'Press <b>Watch</b> next to a friend, or <b>+ New party room</b> to invite several at once.'
         : 'Add a friend with the search bar above, then press <b>Watch</b> next to their name.';
     }
 
@@ -3523,21 +3567,26 @@
   }
 
   // ---------- PARTY ROOMS ----------
-  async function startParty(friendId, btn) {
-    if (!supa || !authUser) return;
+  async function startParty(friendIds, btn) {
+    if (!supa || !authUser) return false;
+    const ids = Array.isArray(friendIds) ? friendIds : [friendIds];
+    if (!ids.length) return false;
     if (btn) { btn.disabled = true; btn.textContent = '…'; }
-    const { data, error } = await supa.rpc('create_party', { friend_ids: [friendId], party_name: null });
+    const { data, error } = await supa.rpc('create_party', { friend_ids: ids, party_name: null });
     if (error || !data || !data.length) {
       if (btn) { btn.disabled = false; btn.textContent = 'Watch'; }
       toast('Could not start the party', 3000);
-      return;
+      return false;
     }
     partyRoomId = data[0].out_room_id;
     closeFriendsPanel();
-    toast('Invite sent — setting up the room', 3000);
-    await hostRoom(data[0].out_code, 2);
+    toast(ids.length > 1
+      ? 'Invites sent to ' + ids.length + ' friends — setting up the room'
+      : 'Invite sent — setting up the room', 3000);
+    await hostRoom(data[0].out_code, ids.length + 1);   // room fits everyone invited, plus you
     loadRoomChat();
     loadPlaylist();
+    return true;
   }
 
   async function joinParty(inviteId, roomId, btn) {
@@ -3636,13 +3685,44 @@
       $('friends-cta').classList.add('hide');
     };
 
+    // --- party picker ---
+    function setPartyMode(on) {
+      partySelect = on;
+      partyPicked.clear();
+      $('fp-bar').classList.toggle('on', on);
+      $('fp-actions').style.display = on ? 'none' : '';
+      $('fp-head').querySelector('h3').textContent = on ? 'New party' : 'Friends';
+      renderFriends();
+    }
+    $('fp-new').onclick = () => setPartyMode(true);
+    $('fp-cancel').onclick = () => setPartyMode(false);
+    $('fp-start').onclick = async () => {
+      const ids = Array.from(partyPicked);
+      if (!ids.length) return;
+      $('fp-start').disabled = true;
+      $('fp-start').textContent = 'Starting…';
+      const ok = await startParty(ids);
+      if (!ok) { $('fp-start').disabled = false; $('fp-start').textContent = 'Start party'; return; }
+      setPartyMode(false);
+    };
+
     $('fp-body').addEventListener('click', async (e) => {
+      // in picker mode the whole row toggles
+      if (partySelect) {
+        const row = e.target.closest('.fr-row.pick');
+        if (!row) return;
+        const id = row.dataset.uid;
+        if (partyPicked.has(id)) partyPicked.delete(id); else partyPicked.add(id);
+        renderFriends();
+        return;
+      }
+
       const btn = e.target.closest('[data-act]');
       if (!btn) return;
       const row = btn.closest('.fr-row');
       const act = btn.dataset.act;
 
-      if (act === 'party')  return startParty(row.dataset.uid, btn);
+      if (act === 'party')  return startParty([row.dataset.uid], btn);
       if (act === 'join')   return joinParty(row.dataset.invite, row.dataset.room, btn);
       if (act === 'nojoin') {
         btn.disabled = true;
@@ -3651,6 +3731,13 @@
       }
 
       const rowId = row.dataset.row;
+
+      if (act === 'remove') {
+        const who = row.querySelector('.fr-name');
+        const name = who ? who.textContent : 'this person';
+        if (!confirm('Remove ' + name + ' from your friends?\n\nYou will both need to send a new request to add each other again.')) return;
+      }
+
       btn.disabled = true;
       if (act === 'accept')       await supa.from('friendships').update({ status: 'accepted' }).eq('id', rowId);
       else if (act === 'decline') await supa.from('friendships').update({ status: 'declined' }).eq('id', rowId);
