@@ -8,6 +8,19 @@
 <link rel="apple-touch-icon" href="logo.svg">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0b0d11">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="apple-touch-icon" href="logo.svg">
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    });
+  }
+</script>
 <style>
   :root {
     --bg: #0f1115;
@@ -151,11 +164,13 @@
 
   /* attachment sheet */
   #cv-attach-menu {
-    display: none; flex-direction: column; gap: 2px; margin: 0 12px 4px;
+    display: none; flex-direction: column; gap: 2px;
+    position: absolute; left: 12px; bottom: 74px; z-index: 6; width: 240px;
     background: #14171d; border: 1px solid #2a3040; border-radius: 14px; padding: 8px;
-    box-shadow: 0 -8px 26px rgba(0,0,0,.45); flex: none;
+    box-shadow: 0 10px 30px rgba(0,0,0,.55);
   }
   #cv-attach-menu.on { display: flex; }
+  #chat-view { position: relative; }
   .cv-att {
     display: flex; align-items: center; gap: 12px; background: none; border: none;
     color: var(--fg); font-family: inherit; font-size: 14px; padding: 9px 10px;
@@ -193,8 +208,12 @@
   .cv-file-ic .ic { width: 17px; height: 17px; }
   .cv-file-name { font-size: 13px; font-weight: 600; word-break: break-all; }
   .cv-file-size { font-size: 11px; opacity: .7; }
-  .cv-voice { display: flex; align-items: center; gap: 8px; min-width: 190px; }
-  .cv-voice audio { height: 34px; max-width: 210px; }
+  .cv-msg.voice { padding: 5px 6px; }
+  .cv-voice { display: flex; align-items: center; }
+  .cv-voice audio { width: 232px; height: 36px; display: block; }
+  /* the browser's own audio widget is light; keep it legible on both bubble colours */
+  .cv-msg.me .cv-voice audio { filter: none; }
+  #cv-rec { position: relative; z-index: 6; }
   .cv-up { font-size: 12px; opacity: .75; }
 
   /* ---- Incoming call ---- */
@@ -2334,6 +2353,15 @@
     }
 
     if (msg.type === 'bye') {
+      // on a one-to-one call, whoever hangs up ends it for both
+      if (roomMode === 'audio' || roomMode === 'video') {
+        ending = true;
+        ringStop();
+        toast('Call ended', 2500);
+        csTeardown();
+        setTimeout(() => location.reload(), 800);
+        return;
+      }
       if (fromId === hostId && !isHost) {
         ending = true;
         toast('Host ended the session', 3000);
@@ -3768,6 +3796,12 @@
       document.body.classList.add('has-account');
       loadFriends();
       watchFriends();
+      // ask once, on the first tap after signing in (browsers require a gesture)
+      document.addEventListener('pointerdown', function once() {
+        document.removeEventListener('pointerdown', once);
+        ctx();          // unlock audio so ringtones can play later
+        askNotify();
+      }, { once: true });
     }
     openApp();
   }
@@ -3995,6 +4029,93 @@
     document.body.classList.toggle('cs-audio', roomMode === 'audio');
   }
 
+  // ---------- RINGTONES + ALERT SOUNDS ----------
+  // generated with WebAudio so there are no audio files to download
+  let toneCtx = null, ringTimer = null, ringNodes = [];
+
+  function ctx() {
+    if (!toneCtx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return null;
+      toneCtx = new AC();
+    }
+    if (toneCtx.state === 'suspended') { try { toneCtx.resume(); } catch (e) {} }
+    return toneCtx;
+  }
+
+  function beep(freq, startIn, dur, vol) {
+    const c = ctx();
+    if (!c) return;
+    const osc = c.createOscillator(), gain = c.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = freq;
+    const t0 = c.currentTime + startIn;
+    gain.gain.setValueAtTime(0, t0);
+    gain.gain.linearRampToValueAtTime(vol == null ? 0.18 : vol, t0 + 0.02);
+    gain.gain.setValueAtTime(vol == null ? 0.18 : vol, t0 + dur - 0.04);
+    gain.gain.linearRampToValueAtTime(0, t0 + dur);
+    osc.connect(gain); gain.connect(c.destination);
+    osc.start(t0); osc.stop(t0 + dur + 0.02);
+    ringNodes.push(osc);
+  }
+
+  function ringStop() {
+    if (ringTimer) { clearInterval(ringTimer); ringTimer = null; }
+    ringNodes.forEach(n => { try { n.stop(); } catch (e) {} });
+    ringNodes = [];
+  }
+
+  function ringStart(dir) {
+    ringStop();
+    if (dir === 'out') {
+      // ringback: two short tones, then a gap — what the caller hears
+      const cycle = () => { beep(440, 0, 0.9, 0.10); beep(480, 0, 0.9, 0.10); };
+      cycle();
+      ringTimer = setInterval(cycle, 3000);
+    } else {
+      // incoming: a brighter repeating figure
+      const cycle = () => {
+        beep(660, 0.00, 0.22, 0.20);
+        beep(880, 0.26, 0.22, 0.20);
+        beep(660, 0.60, 0.22, 0.20);
+        beep(880, 0.86, 0.30, 0.20);
+      };
+      cycle();
+      ringTimer = setInterval(cycle, 2400);
+    }
+  }
+
+  function dingMessage() { beep(880, 0, 0.10, 0.15); beep(1180, 0.10, 0.14, 0.13); }
+
+  // ---------- NOTIFICATIONS ----------
+  function canNotify() {
+    return typeof Notification !== 'undefined' && Notification.permission === 'granted';
+  }
+
+  async function askNotify() {
+    if (typeof Notification === 'undefined') return false;
+    if (Notification.permission === 'granted') return true;
+    if (Notification.permission === 'denied') return false;
+    try { return (await Notification.requestPermission()) === 'granted'; } catch (e) { return false; }
+  }
+
+  function notify(title, body, tag) {
+    if (!canNotify()) return;
+    // only nag when they are not already looking at it
+    if (document.visibilityState === 'visible' && !document.hidden && document.hasFocus()) return;
+    // an installed app on Android can only show these via the service worker
+    if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+      try {
+        navigator.serviceWorker.controller.postMessage({ type: 'notify', title, body: body || '', tag: tag || 'wt' });
+        return;
+      } catch (e) {}
+    }
+    try {
+      const n = new Notification(title, { body: body || '', tag: tag || 'wt', icon: 'logo.svg', badge: 'logo.svg' });
+      n.onclick = () => { try { window.focus(); } catch (e) {} n.close(); };
+    } catch (e) {}
+  }
+
   // ---------- CALL SCREEN ----------
   let callPeerInfo = null;      // who we are talking to
   let callRemoteStream = null;
@@ -4039,6 +4160,7 @@
 
   function csConnected() {
     if (callStart) return;
+    ringStop();                     // they picked up
     callStart = Date.now();
     callTimer = setInterval(() => {
       const s = Math.floor((Date.now() - callStart) / 1000);
@@ -4057,10 +4179,12 @@
     callStart = 0;
     if (callTimer) { clearInterval(callTimer); callTimer = null; }
     csSetStatus(outgoing ? 'Calling…' : 'Connecting…');
+    if (outgoing) ringStart('out');
     csRender();
   }
 
   function csTeardown() {
+    ringStop();
     if (callTimer) { clearInterval(callTimer); callTimer = null; }
     callStart = 0; callRemoteStream = null; callPeerInfo = null; callSwapped = false;
     $('cs-remote-vid').srcObject = null;
@@ -4192,6 +4316,7 @@
       signedUrl(url).then(u => { if (u) el.src = u; });
       if (kind === 'image') el.onclick = () => { if (el.src) window.open(el.src, '_blank', 'noopener'); };
     } else if (kind === 'voice') {
+      d.classList.add('voice');
       const wrap = document.createElement('div');
       wrap.className = 'cv-voice';
       const a = document.createElement('audio');
@@ -4301,6 +4426,10 @@
           const row = p.new;
           if (!row || row.user_id === authUser.id) return;   // ours is already on screen
           cvAppend(row.body, false, row.created_at, row.kind, row.url, row.meta);
+          dingMessage();
+          notify(cvFriend ? cvFriend.username : 'New message',
+                 row.kind === 'text' ? (row.body || '') :
+                 row.kind === 'voice' ? 'Voice message' : 'Sent an attachment', 'msg');
         })
       .subscribe();
   }
@@ -4444,7 +4573,12 @@
   function renderRing() {
     const bar = $('ring-bar');
     const inv = inviteRows[0];
-    if (!inv || document.body.classList.contains('in-room')) { bar.classList.remove('on'); return; }
+    if (!inv || document.body.classList.contains('in-room')) {
+      if (bar.classList.contains('on')) ringStop();
+      bar.classList.remove('on');
+      bar.dataset.ringing = '';
+      return;
+    }
     $('ring-avatar').textContent = inv.from_emoji || '🍿';
     $('ring-avatar').style.background = inv.from_color || '#4f8cff';
     $('ring-name').textContent = inv.from_name;
@@ -4457,13 +4591,23 @@
     bar.dataset.who = inv.from_name || '';
     bar.dataset.emoji = inv.from_emoji || '🍿';
     bar.dataset.color = inv.from_color || '#4f8cff';
+
+    const already = bar.classList.contains('on') && bar.dataset.ringing === inv.invite_id;
     bar.classList.add('on');
+    if (!already) {
+      bar.dataset.ringing = inv.invite_id;
+      ringStart('in');
+      const what = inv.kind === 'audio' ? 'Audio call' :
+                   inv.kind === 'video' ? 'Video call' : 'Wants to watch together';
+      notify(inv.from_name, what, 'call');
+    }
   }
 
   function wireRing() {
     $('ring-accept').onclick = async () => {
       const bar = $('ring-bar');
       const kind = bar.dataset.kind || 'watch';
+      ringStop();
       bar.classList.remove('on');
       const { data, error } = await supa.rpc('accept_invite', { inv: bar.dataset.invite });
       if (error || !data) { toast('That call has ended', 3000); loadFriends(); return; }
@@ -4480,6 +4624,7 @@
     };
     $('ring-decline').onclick = async () => {
       const bar = $('ring-bar');
+      ringStop();
       bar.classList.remove('on');
       await supa.rpc('decline_invite', { inv: bar.dataset.invite });
       loadFriends();

@@ -1,0 +1,19 @@
+{
+  "name": "Watch Together",
+  "short_name": "Watch Together",
+  "description": "Watch movies and series with friends, with live video calls and chat.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0b0d11",
+  "theme_color": "#0b0d11",
+  "icons": [
+    {
+      "src": "logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
