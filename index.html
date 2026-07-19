@@ -106,6 +106,17 @@
     padding: 8px 4px; border-bottom: 1px solid #2a3040; margin-bottom: 6px;
   }
 
+  /* ---- Friends-first setup ---- */
+  #classic-room { display: flex; flex-direction: column; align-items: center; gap: 16px; width: 100%; }
+  #friends-cta { display: none; flex-direction: column; align-items: center; gap: 6px; }
+  #friends-cta p { margin: 0; }
+  /* signed in: lead with friends, keep room codes as a fallback */
+  body.has-account #setup-intro { display: none; }
+  body.has-account #classic-room { display: none; }
+  body.has-account #classic-room.show { display: flex; }
+  body.has-account #friends-cta { display: flex; }
+  body.has-account #friends-cta.hide { display: none; }
+
   /* ---- Saved playlist ---- */
   #pl-saved { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
   #pl-saved .pl-lbl { font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); }
@@ -201,7 +212,7 @@
   .auth-msg { font-size: 13px; min-height: 18px; }
   .auth-msg.err { color: #ff6b6b; }
   .auth-msg.ok  { color: #6bcb77; }
-  #auth-alt { color: var(--muted); font-size: 13px; margin-top: 6px; }
+  .auth-alt { color: var(--muted); font-size: 13px; margin-top: 6px; }
   #acct-row {
     display: none; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap;
     font-size: 13px; color: var(--muted); background: #14171d; border: 1px solid #23272f;
@@ -839,7 +850,7 @@
       <div class="auth-msg" id="li-msg"></div>
       <button class="btn" id="btn-login">Sign in</button>
       <button class="auth-link" data-go="forgot">Forgot password?</button>
-      <div id="auth-alt">New here? <button class="auth-link" data-go="signup">Create an account</button></div>
+      <div class="auth-alt">New here? <button class="auth-link" data-go="signup">Create an account</button></div>
     </div>
 
     <!-- sign up -->
@@ -852,7 +863,7 @@
       <input type="password" id="su-pass2" placeholder="Re-enter password" autocomplete="new-password">
       <div class="auth-msg" id="su-msg"></div>
       <button class="btn" id="btn-signup">Sign up</button>
-      <div id="auth-alt">Already have an account? <button class="auth-link" data-go="login">Sign in</button></div>
+      <div class="auth-alt">Already have an account? <button class="auth-link" data-go="login">Sign in</button></div>
     </div>
 
     <!-- forgot -->
@@ -904,30 +915,38 @@
 
   <p id="setup-intro">Watch a movie together with a live video call. One person creates a room, the others join with the code.</p>
 
-  <div id="cap-row">
-    <label for="cap-select">How many watching?</label>
-    <select id="cap-select">
-      <option value="2" selected>2</option>
-      <option value="3">3</option>
-      <option value="4">4</option>
-      <option value="5">5</option>
-      <option value="6">6</option>
-      <option value="7">7</option>
-      <option value="8">8</option>
-      <option value="9">9</option>
-      <option value="10">10</option>
-    </select>
+  <div id="friends-cta">
+    <p id="cta-text">Add a friend with the search bar above, then press <b>Watch</b> next to their name.</p>
+    <button class="auth-link" id="show-classic">Use a room code instead</button>
   </div>
-  <button class="btn" id="btn-create">Create a room</button>
+
+  <div id="classic-room">
+    <div id="cap-row">
+      <label for="cap-select">How many watching?</label>
+      <select id="cap-select">
+        <option value="2" selected>2</option>
+        <option value="3">3</option>
+        <option value="4">4</option>
+        <option value="5">5</option>
+        <option value="6">6</option>
+        <option value="7">7</option>
+        <option value="8">8</option>
+        <option value="9">9</option>
+        <option value="10">10</option>
+      </select>
+    </div>
+    <button class="btn" id="btn-create">Create a room</button>
+    <div style="color:var(--muted)">— or —</div>
+    <input type="text" id="join-code" placeholder="Enter room code" autocapitalize="characters">
+    <button class="btn secondary" id="btn-join">Join room</button>
+  </div>
+
   <div id="room-info">
     <div>Share this code with the others:</div>
     <div id="room-code"></div>
     <button class="btn secondary" id="btn-share">Share code</button>
     <div class="hint" id="wait-hint">Waiting for others to join…</div>
   </div>
-  <div style="color:var(--muted)">— or —</div>
-  <input type="text" id="join-code" placeholder="Enter room code" autocapitalize="characters">
-  <button class="btn secondary" id="btn-join">Join room</button>
   <p id="setup-msg"></p>
 </div>
 
@@ -1705,8 +1724,8 @@
       myRoomCode = code;
       $('tp-room').innerHTML = 'Room <b>' + code + '</b>';
       $('room-info').style.display = 'flex';
-      $('btn-create').style.display = 'none';
-      $('cap-row').style.display = 'none';
+      $('classic-room').style.display = 'none';
+      $('friends-cta').classList.add('hide');
       $('wait-hint').textContent = 'Waiting for others to join… (room size: ' + capacity + ')';
       statusEl.textContent = 'waiting';
     });
@@ -3473,6 +3492,14 @@
     }
 
     $('fp-body').innerHTML = html;
+
+    const cta = $('cta-text');
+    if (cta) {
+      cta.innerHTML = accepted.length
+        ? 'Pick a friend on the left and press <b>Watch</b> to start a room together.'
+        : 'Add a friend with the search bar above, then press <b>Watch</b> next to their name.';
+    }
+
     const badge = $('fp-badge');
     const n = incoming.length + inviteRows.length;
     badge.textContent = n;
@@ -3602,6 +3629,12 @@
     $('btn-friends').onclick = openPanel;
     $('fp-close').onclick = closePanel;
     backdrop.onclick = closePanel;
+
+    // room codes stay available for anyone who isn't on your friends list yet
+    $('show-classic').onclick = () => {
+      $('classic-room').classList.add('show');
+      $('friends-cta').classList.add('hide');
+    };
 
     $('fp-body').addEventListener('click', async (e) => {
       const btn = e.target.closest('[data-act]');
