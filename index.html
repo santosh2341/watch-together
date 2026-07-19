@@ -211,6 +211,24 @@
   body.cs-audio #cs-cam { display: none; }
   .cs-btn .ic { width: 24px; height: 24px; }
 
+  #cs-spk-menu {
+    position: absolute; left: 50%; transform: translateX(-50%); bottom: 104px; z-index: 4;
+    background: #14171d; border: 1px solid #2a3040; border-radius: 14px;
+    padding: 8px; min-width: 250px; max-width: 92vw; display: none;
+    box-shadow: 0 14px 36px rgba(0,0,0,.6); max-height: 45vh; overflow-y: auto;
+  }
+  #cs-spk-menu.on { display: block; }
+  .cs-spk-title { font-size: 11px; text-transform: uppercase; letter-spacing: .6px;
+    color: var(--muted); padding: 5px 10px 7px; }
+  .cs-spk-item {
+    display: block; width: 100%; text-align: left; background: none; border: none;
+    color: var(--fg); font-family: inherit; font-size: 13px; padding: 10px 11px;
+    border-radius: 9px; cursor: pointer;
+  }
+  .cs-spk-item:hover { background: #1b1f27; }
+  .cs-spk-item.sel { background: #1b2536; color: var(--accent); font-weight: 600; }
+  .cs-spk-note { font-size: 12px; color: var(--muted); padding: 8px 11px; line-height: 1.45; }
+
   @media (min-width: 900px) {
     body.has-account:not(.in-room) #chat-view { margin-left: 250px; }
   }
@@ -973,7 +991,7 @@
 <div id="call-screen">
   <div id="cs-remote">
     <video id="cs-bg" autoplay playsinline muted></video>
-    <video id="cs-remote-vid" autoplay playsinline></video>
+    <video id="cs-remote-vid" autoplay playsinline muted></video>
     <div id="cs-remote-av"></div>
   </div>
   <div id="cs-self" title="Tap to swap">
@@ -984,12 +1002,19 @@
     <div id="cs-name"></div>
     <div id="cs-status">Calling…</div>
   </div>
+  <div id="cs-spk-menu">
+    <div class="cs-spk-title">Play sound through</div>
+    <div id="cs-spk-list"></div>
+  </div>
   <div id="cs-bar">
     <button class="cs-btn" id="cs-mic" title="Mute">
       <svg class="ic" viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v1a7 7 0 0 1-14 0v-1M12 18v4"/></svg>
     </button>
     <button class="cs-btn" id="cs-cam" title="Camera">
       <svg class="ic" viewBox="0 0 24 24"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+    </button>
+    <button class="cs-btn" id="cs-speaker" title="Speaker">
+      <svg class="ic" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a9 9 0 0 1 0 14"/></svg>
     </button>
     <button class="cs-btn end" id="cs-end" title="End call">
       <svg class="ic" viewBox="0 0 24 24"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.5 2.8.6a2 2 0 0 1 1.7 2z" transform="rotate(135 12 12)"/></svg>
@@ -2049,6 +2074,8 @@
       el = v;
     }
     el.srcObject = stream;
+    // route this voice to the output the user picked
+    if (speakerId && CAN_PICK_SPEAKER) { try { el.setSinkId(speakerId); } catch (e) {} }
     // feed the WhatsApp-style call screen
     if (document.body.classList.contains('in-call')) {
       callRemoteStream = stream;
@@ -3930,8 +3957,76 @@
     document.body.classList.remove('in-call', 'cs-audio');
   }
 
+  // ---------- SPEAKER / OUTPUT DEVICE ----------
+  const CAN_PICK_SPEAKER = typeof HTMLMediaElement !== 'undefined'
+    && 'setSinkId' in HTMLMediaElement.prototype;
+  let speakerId = '';
+  try { speakerId = localStorage.getItem('wt_speaker') || ''; } catch (e) {}
+
+  // every element that actually plays the other person's voice
+  function audioSinks() {
+    return Array.from(document.querySelectorAll('video[id^="cam-"], audio[id^="cam-"]'));
+  }
+
+  async function applySpeaker(id) {
+    if (!CAN_PICK_SPEAKER) return false;
+    let ok = true;
+    for (const el of audioSinks()) {
+      try { await el.setSinkId(id || 'default'); } catch (e) { ok = false; }
+    }
+    if (ok) {
+      speakerId = id;
+      try { localStorage.setItem('wt_speaker', id); } catch (e) {}
+    }
+    return ok;
+  }
+
+  async function buildSpeakerMenu() {
+    const list = $('cs-spk-list');
+    if (!CAN_PICK_SPEAKER) {
+      list.innerHTML = '<div class="cs-spk-note">This browser will not let a web page choose the ' +
+        'output device. Pick the speaker or earpiece from your system sound settings instead.</div>';
+      return;
+    }
+    let outs = [];
+    try {
+      const devs = await navigator.mediaDevices.enumerateDevices();
+      outs = devs.filter(d => d.kind === 'audiooutput');
+    } catch (e) {}
+    if (!outs.length) {
+      list.innerHTML = '<div class="cs-spk-note">No output devices found.</div>';
+      return;
+    }
+    list.innerHTML = outs.map((d, i) => {
+      const id = d.deviceId || 'default';
+      const label = d.label || ('Output ' + (i + 1));
+      const sel = (id === (speakerId || 'default')) ? ' sel' : '';
+      return '<button class="cs-spk-item' + sel + '" data-dev="' + frEsc(id) + '">' + frEsc(label) + '</button>';
+    }).join('');
+  }
+
   function wireCallScreen() {
     $('cs-self').onclick = () => { callSwapped = !callSwapped; csRender(); };
+
+    $('cs-speaker').onclick = async (e) => {
+      e.stopPropagation();
+      const menu = $('cs-spk-menu');
+      if (menu.classList.contains('on')) { menu.classList.remove('on'); return; }
+      await buildSpeakerMenu();
+      menu.classList.add('on');
+    };
+    $('cs-spk-list').onclick = async (e) => {
+      const item = e.target.closest('.cs-spk-item');
+      if (!item) return;
+      const ok = await applySpeaker(item.dataset.dev);
+      if (!ok) toast('Could not switch to that output', 3000);
+      $('cs-spk-menu').classList.remove('on');
+    };
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('#cs-spk-menu') && !e.target.closest('#cs-speaker')) {
+        $('cs-spk-menu').classList.remove('on');
+      }
+    });
     $('cs-mic').onclick = () => {
       $('btn-mic').click();
       $('cs-mic').classList.toggle('off', /off/i.test($('mic-lbl').textContent));
