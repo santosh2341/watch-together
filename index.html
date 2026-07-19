@@ -119,6 +119,19 @@
     padding: 8px 4px; border-bottom: 1px solid #2a3040; margin-bottom: 6px;
   }
 
+  /* an avatar showing a real photo instead of a character */
+  .has-photo {
+    background-size: cover !important;
+    background-position: center !important;
+    background-repeat: no-repeat !important;
+    color: transparent !important;
+    font-size: 0 !important;
+  }
+  #avatar-preview.has-photo #avatar-emoji { display: none; }
+  #name-msg { min-height: 16px; font-size: 12px; }
+  #name-msg.err { color: #ff6b6b; }
+  #name-msg.ok { color: #6bcb77; }
+
   /* ---- Chat with a friend ---- */
   /* fixed to the viewport: only the message list scrolls, never the composer */
   #chat-view {
@@ -1268,7 +1281,15 @@
     <div id="avatar-preview" title="Tap to change your character"><span id="avatar-emoji">🍿</span></div>
     <div id="avatar-hint">Tap the icon to change it</div>
     <input type="text" id="name-input" placeholder="Enter your name" maxlength="20" autocomplete="off">
+    <div id="name-msg" class="hint"></div>
     <div id="picker-wrap">
+      <button type="button" class="btn secondary" id="btn-photo" style="max-width:220px">
+        <svg class="ic" viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+        Upload a photo
+      </button>
+      <button type="button" class="btn secondary" id="btn-photo-clear" style="max-width:220px;display:none">Remove photo</button>
+      <input type="file" id="photo-input" accept="image/*" style="display:none">
+      <div class="pick-label">Or pick a character</div>
       <button type="button" class="btn secondary" id="btn-random" style="max-width:220px">🎲 Surprise me</button>
       <div class="pick-label">Choose your character</div>
       <div id="avatar-grid"></div>
@@ -1564,17 +1585,37 @@
   const AVATARS = ['🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐨','🐯','🦁','🐮','🐷','🐸','🐵','🐔','🐧','🐦','🦄','🐝','🦋','🐢','🐙','🦑','🦕','🦖','🐬','🐳','🦩','🦔','🦦','🦥','🦧','🐺','🐗','🦓','🦒','🦘','🐊','👾','👽','🤖','🎃','👻','💀','🤡','👹','👺','🐲','🐉','🧸','🥷','🦸','🦹','😎','🤠','🥳','🤩','😺','😸','😻','🤪','🍕','🍔','🌮','🍩','🍦','🍓','🍉','🍒','🍑','🥑','🍄','🌭','🍿','🧁','🍪','🌟','⚡','🔥','🌈','🎩','👑','🎸','🚀','⚽','🎮','🎈','🪄','💎'];
   const COLORS  = ['#4f8cff','#ff6b6b','#ffd93d','#6bcb77','#a66bff','#ff9f43','#3ec9d6','#ff6bcb','#f76e11','#20bf6b','#eb3b5a','#778beb'];
 
-  let profile = { name: '', emoji: '🍿', color: '#4f8cff' };
+  let profile = { name: '', emoji: '🍿', color: '#4f8cff', photo: '' };
   try {
     const saved = JSON.parse(localStorage.getItem('wt_profile') || 'null');
-    if (saved && saved.emoji) profile = { name: saved.name || '', emoji: saved.emoji, color: saved.color || '#4f8cff' };
+    if (saved && saved.emoji) profile = {
+      name: saved.name || '', emoji: saved.emoji,
+      color: saved.color || '#4f8cff', photo: saved.photo || ''
+    };
   } catch (e) {}
+
+  // one place that decides whether an avatar shows a photo or a character
+  function paintAvatar(el, emoji, color, photo) {
+    if (!el) return;
+    if (photo) {
+      el.classList.add('has-photo');
+      el.style.backgroundImage = 'url("' + photo + '")';
+      el.style.backgroundColor = '#14171d';
+      if (el.id !== 'avatar-preview') el.textContent = '';
+    } else {
+      el.classList.remove('has-photo');
+      el.style.backgroundImage = '';
+      el.style.backgroundColor = color || '#4f8cff';
+      if (el.id !== 'avatar-preview') el.textContent = emoji || '🍿';
+    }
+  }
 
   const avGrid = $('avatar-grid'), colRow = $('color-row'), nameInput = $('name-input');
 
   function refreshAvatarUI() {
     $('avatar-emoji').textContent = profile.emoji;
-    $('avatar-preview').style.background = profile.color;
+    paintAvatar($('avatar-preview'), profile.emoji, profile.color, profile.photo);
+    $('btn-photo-clear').style.display = profile.photo ? '' : 'none';
     avGrid.querySelectorAll('.av').forEach(d => d.classList.toggle('sel', d.dataset.emoji === profile.emoji));
     colRow.querySelectorAll('.sw').forEach(s => s.classList.toggle('sel', s.dataset.color === profile.color));
   }
@@ -1597,6 +1638,85 @@
   });
   nameInput.value = profile.name;
   nameInput.oninput = () => { profile.name = nameInput.value.trim(); };
+
+  // ---- display picture ----
+  function nameMsg(text, ok) {
+    const el = $('name-msg');
+    el.textContent = text || '';
+    el.className = 'hint' + (text ? (ok ? ' ok' : ' err') : '');
+  }
+
+  // shrink before upload so avatars stay small and load instantly
+  async function shrinkImage(file, max) {
+    const bmp = await createImageBitmap(file);
+    const scale = Math.min(1, max / Math.max(bmp.width, bmp.height));
+    const w = Math.max(1, Math.round(bmp.width * scale));
+    const h = Math.max(1, Math.round(bmp.height * scale));
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    c.getContext('2d').drawImage(bmp, 0, 0, w, h);
+    return await new Promise(res => c.toBlob(res, 'image/jpeg', 0.85));
+  }
+
+  async function uploadAvatar(file) {
+    if (!supa || !authUser) { toast('Sign in first', 3000); return; }
+    if (!/^image\//.test(file.type)) { toast('Pick an image', 3000); return; }
+    nameMsg('Uploading photo…', true);
+    let blob = file;
+    try { blob = (await shrinkImage(file, 256)) || file; } catch (e) {}
+    const path = authUser.id + '/dp-' + Date.now() + '.jpg';
+    const up = await supa.storage.from('avatars')
+      .upload(path, blob, { contentType: 'image/jpeg', upsert: true });
+    if (up.error) { nameMsg('Could not upload that photo'); return; }
+    const { data } = supa.storage.from('avatars').getPublicUrl(path);
+    profile.photo = data.publicUrl;
+    const r = await supa.from('profiles').update({ avatar_url: profile.photo }).eq('id', authUser.id);
+    if (r.error) { nameMsg('Could not save that photo'); return; }
+    nameMsg('Photo updated', true);
+    refreshAvatarUI(); updateTopChip(); saveProfile();
+    setTimeout(() => nameMsg(''), 2500);
+  }
+
+  $('btn-photo').onclick = () => $('photo-input').click();
+  $('photo-input').onchange = (e) => {
+    const f = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (f) uploadAvatar(f);
+  };
+  $('btn-photo-clear').onclick = async () => {
+    profile.photo = '';
+    if (supa && authUser) await supa.from('profiles').update({ avatar_url: null }).eq('id', authUser.id);
+    refreshAvatarUI(); updateTopChip(); saveProfile();
+  };
+
+  // ---- changing your username ----
+  async function saveUsername() {
+    if (!supa || !authUser) return;
+    const wanted = nameInput.value.trim();
+    if (!wanted || wanted === myUsername) { nameMsg(''); return; }
+    if (!/^[A-Za-z0-9_]{3,20}$/.test(wanted)) {
+      nameMsg('3–20 letters, numbers or underscores.');
+      return;
+    }
+    nameMsg('Saving…', true);
+    const { data, error } = await supa.rpc('set_username', { new_name: wanted });
+    if (error) {
+      nameMsg(/taken/i.test(error.message) ? 'That name is already taken.' : 'Could not save that name.');
+      nameInput.value = myUsername;
+      profile.name = myUsername;
+      return;
+    }
+    myUsername = data || wanted;
+    profile.name = myUsername;
+    nameMsg('Name updated', true);
+    saveProfile(); updateTopChip();
+    $('acct-user').textContent = '@' + myUsername;
+    setTimeout(() => nameMsg(''), 2500);
+  }
+  nameInput.addEventListener('blur', () => { if (authUser) saveUsername(); });
+  nameInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); nameInput.blur(); }
+  });
   $('avatar-preview').onclick = () => $('profile-box').classList.toggle('open');   // reveal the picker
   $('btn-random').onclick = () => {
     profile.emoji = AVATARS[Math.floor(Math.random() * AVATARS.length)];
@@ -1611,7 +1731,7 @@
     try { syncProfileToCloud(); } catch (e) {}
     const av = document.querySelector('#tile-local .cam-avatar');
     const lab = document.querySelector('#tile-local .cam-label');
-    if (av)  { av.textContent = profile.emoji; av.style.background = profile.color; }
+    if (av) paintAvatar(av, profile.emoji, profile.color, profile.photo);
     if (lab) lab.textContent = profile.emoji + ' ' + profile.name + ' (You)';
   }
 
@@ -1633,8 +1753,7 @@
   const profileBox = $('profile-box');
 
   function updateTopChip() {
-    $('tp-avatar').textContent = profile.emoji;
-    $('tp-avatar').style.background = profile.color;
+    paintAvatar($('tp-avatar'), profile.emoji, profile.color, profile.photo);
     $('tp-name').textContent = profile.name || 'You';
     $('top-profile').style.display = 'flex';
   }
@@ -3754,7 +3873,7 @@
   const SUPA_URL = 'https://cpojjiehqcjbmfnyvhrq.supabase.co';
   const SUPA_KEY = 'sb_publishable_7OVG2kX3CcGSSlXjGZe_ug_VX1QjrI9';
 
-  let supa = null, authUser = null, myUid6 = '';
+  let supa = null, authUser = null, myUid6 = '', myUsername = '';
 
   function authView(name) {
     document.querySelectorAll('.auth-view').forEach(v => v.classList.toggle('on', v.dataset.view === name));
@@ -3791,15 +3910,17 @@
     }
     if (row) {
       myUid6 = row.uid6 || '';
+      myUsername = row.username || '';
       if (row.username) profile.name = row.username;
       if (row.avatar_emoji) profile.emoji = row.avatar_emoji;
       if (row.avatar_color) profile.color = row.avatar_color;
+      profile.photo = row.avatar_url || '';
       $('acct-user').textContent = '@' + (row.username || '');
       $('acct-uid').textContent = myUid6 || '------';
       $('acct-row').style.display = 'flex';
       nameInput.value = profile.name;
-      nameInput.disabled = true;
-      nameInput.title = 'Your username — this is how friends find you';
+      nameInput.disabled = false;
+      nameInput.title = 'Your username — friends find you with this. Press Enter to save.';
       try { localStorage.setItem('wt_profile', JSON.stringify(profile)); } catch (e) {}
       refreshAvatarUI();
       document.body.classList.add('has-account');
@@ -3837,10 +3958,19 @@
       ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
   }
 
+  function avHtml(emoji, color, photo, cls) {
+    if (photo) {
+      return '<div class="' + (cls || 'fr-av') + ' has-photo" style="background-image:url(&quot;' +
+        frEsc(photo) + '&quot;)"></div>';
+    }
+    return '<div class="' + (cls || 'fr-av') + '" style="background:' + frEsc(color || '#4f8cff') + '">' +
+      frEsc(emoji || '🍿') + '</div>';
+  }
+
   function frRow(r, buttons, extraClass) {
     return '<div class="fr-row' + (extraClass ? ' ' + extraClass : '') +
       '" data-row="' + frEsc(r.row_id) + '" data-uid="' + frEsc(r.friend_id) + '">' +
-      '<div class="fr-av" style="background:' + frEsc(r.avatar_color || '#4f8cff') + '">' + frEsc(r.avatar_emoji || '🍿') + '</div>' +
+      avHtml(r.avatar_emoji, r.avatar_color, r.avatar_url) +
       '<div class="fr-meta"><div class="fr-name">' + frEsc(r.username) + '</div>' +
       '<div class="fr-uid">#' + frEsc(r.uid6) + '</div></div>' + buttons + '</div>';
   }
@@ -3872,7 +4002,7 @@
       html += '<div class="fp-label">Invites</div>';
       html += inviteRows.map(i =>
         '<div class="fr-row" data-invite="' + frEsc(i.invite_id) + '" data-room="' + frEsc(i.room_id) + '">' +
-        '<div class="fr-av" style="background:' + frEsc(i.from_color || '#4f8cff') + '">' + frEsc(i.from_emoji || '🍿') + '</div>' +
+        avHtml(i.from_emoji, i.from_color, i.from_photo) +
         '<div class="fr-meta"><div class="fr-name">' + frEsc(i.from_name) + '</div>' +
         '<div class="fr-uid">wants to watch</div></div>' +
         '<button class="fr-btn" data-act="join">Join</button>' +
@@ -4198,13 +4328,15 @@
     remoteBox.classList.toggle('swapped', bigIsMine);
     selfBox.classList.toggle('swapped', bigIsMine);
 
-    const meEmoji = profile.emoji, meColor = profile.color;
-    const themEmoji = (callPeerInfo && callPeerInfo.emoji) || '🍿';
-    const themColor = (callPeerInfo && callPeerInfo.color) || '#4f8cff';
-    $('cs-remote-av').textContent = bigIsMine ? meEmoji : themEmoji;
-    $('cs-remote-av').style.background = bigIsMine ? meColor : themColor;
-    $('cs-self-av').textContent = bigIsMine ? themEmoji : meEmoji;
-    $('cs-self-av').style.background = bigIsMine ? themColor : meColor;
+    const them = callPeerInfo || {};
+    paintAvatar($('cs-remote-av'),
+      bigIsMine ? profile.emoji : (them.emoji || '🍿'),
+      bigIsMine ? profile.color : (them.color || '#4f8cff'),
+      bigIsMine ? profile.photo : them.photo);
+    paintAvatar($('cs-self-av'),
+      bigIsMine ? (them.emoji || '🍿') : profile.emoji,
+      bigIsMine ? (them.color || '#4f8cff') : profile.color,
+      bigIsMine ? them.photo : profile.photo);
     $('cs-name').textContent = (callPeerInfo && callPeerInfo.name) || '';
   }
 
@@ -4442,8 +4574,7 @@
     cvFriend = friend;
     $('cv-name').textContent = friend.username;
     $('cv-uid').textContent = '#' + friend.uid6;
-    $('cv-avatar').textContent = friend.avatar_emoji || '🍿';
-    $('cv-avatar').style.background = friend.avatar_color || '#4f8cff';
+    paintAvatar($('cv-avatar'), friend.avatar_emoji, friend.avatar_color, friend.avatar_url);
     $('cv-msgs').innerHTML = '<div class="cv-empty">Loading…</div>';
     document.body.classList.add('chatting');
     closeFriendsPanel();
@@ -4501,7 +4632,8 @@
     applyMode();
     closeFriendChat();
     if (kind !== 'watch') {
-      csStart({ name: cvFriend.username, emoji: cvFriend.avatar_emoji, color: cvFriend.avatar_color }, true);
+      csStart({ name: cvFriend.username, emoji: cvFriend.avatar_emoji,
+                color: cvFriend.avatar_color, photo: cvFriend.avatar_url }, true);
     } else {
       toast('Asking them to watch…', 3000);
     }
@@ -4631,8 +4763,7 @@
       bar.dataset.ringing = '';
       return;
     }
-    $('ring-avatar').textContent = inv.from_emoji || '🍿';
-    $('ring-avatar').style.background = inv.from_color || '#4f8cff';
+    paintAvatar($('ring-avatar'), inv.from_emoji, inv.from_color, inv.from_photo);
     $('ring-name').textContent = inv.from_name;
     $('ring-kind').textContent =
       inv.kind === 'audio' ? 'Audio call' :
@@ -4643,6 +4774,7 @@
     bar.dataset.who = inv.from_name || '';
     bar.dataset.emoji = inv.from_emoji || '🍿';
     bar.dataset.color = inv.from_color || '#4f8cff';
+    bar.dataset.photo = inv.from_photo || '';
 
     const already = bar.classList.contains('on') && bar.dataset.ringing === inv.invite_id;
     bar.classList.add('on');
@@ -4668,7 +4800,8 @@
       applyMode();
       closeFriendChat();
       if (kind !== 'watch') {
-        csStart({ name: bar.dataset.who, emoji: bar.dataset.emoji, color: bar.dataset.color }, false);
+        csStart({ name: bar.dataset.who, emoji: bar.dataset.emoji,
+                  color: bar.dataset.color, photo: bar.dataset.photo || '' }, false);
       }
       await guestJoin(data);
       csRender();
@@ -4800,7 +4933,8 @@
         else if (rel && rel.direction === 'out') action = '<span class="fr-note">Pending</span>';
         else if (rel && rel.direction === 'in')  action = '<button class="fr-btn" data-add="' + frEsc(u.id) + '">Accept</button>';
         return frRow({ row_id: '', friend_id: u.id, username: u.username, uid6: u.uid6,
-                       avatar_emoji: u.avatar_emoji, avatar_color: u.avatar_color }, action);
+                       avatar_emoji: u.avatar_emoji, avatar_color: u.avatar_color,
+                       avatar_url: u.avatar_url }, action);
       }).join('');
       box.classList.add('on');
     }
