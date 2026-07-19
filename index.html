@@ -7,6 +7,7 @@
 <link rel="icon" type="image/svg+xml" href="logo.svg">
 <link rel="apple-touch-icon" href="logo.svg">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root {
     --bg: #0f1115;
@@ -99,6 +100,35 @@
   #edit-card h3 { font-size: 16px; }
   #edit-actions { display: flex; gap: 10px; width: 100%; }
   #edit-actions .btn { flex: 1; margin: 0; max-width: none; }
+
+  /* ---- Auth screen ---- */
+  #auth { display: none; flex: 1; flex-direction: column; align-items: center; justify-content: center; padding: 24px; }
+  body.auth-gate #auth { display: flex; }
+  body.auth-gate header, body.auth-gate #setup, body.auth-gate #room { display: none !important; }
+  #auth-card { width: 100%; max-width: 360px; display: flex; flex-direction: column; gap: 12px; text-align: center; }
+  #auth-logo { font-size: 40px; line-height: 1; }
+  #auth-card h2 { font-size: 20px; margin: 0; }
+  #auth-card .sub { color: var(--muted); font-size: 13px; margin: 0 0 4px; }
+  .auth-view { display: none; flex-direction: column; gap: 10px; }
+  .auth-view.on { display: flex; }
+  #auth-card input {
+    width: 100%; padding: 13px 14px; border-radius: 10px; font-size: 15px;
+    border: 1px solid #2a2f3a; background: #14171d; color: var(--fg); box-sizing: border-box;
+  }
+  #auth-card input:focus { outline: none; border-color: var(--accent); }
+  #auth-card .btn { max-width: none; width: 100%; margin: 2px 0 0; }
+  .auth-link { background: none; border: none; color: var(--accent); font-size: 13px; cursor: pointer; padding: 4px; font-family: inherit; }
+  .auth-msg { font-size: 13px; min-height: 18px; }
+  .auth-msg.err { color: #ff6b6b; }
+  .auth-msg.ok  { color: #6bcb77; }
+  #auth-alt { color: var(--muted); font-size: 13px; margin-top: 6px; }
+  #acct-row {
+    display: none; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap;
+    font-size: 13px; color: var(--muted); background: #14171d; border: 1px solid #23272f;
+    border-radius: 999px; padding: 7px 14px;
+  }
+  #acct-row b { color: var(--fg); font-weight: 600; }
+  #acct-uid { font-family: ui-monospace, monospace; letter-spacing: 1px; color: var(--accent); }
 
   /* ---- Setup screen ---- */
   #setup {
@@ -678,7 +708,7 @@
   }
 </style>
 </head>
-<body>
+<body class="auth-gate">
 
 <header>
   <h1><img src="logo.svg" alt="" style="width:24px;height:24px"> <span class="h1-txt">Watch Together</span></h1>
@@ -695,8 +725,69 @@
   </div>
 </header>
 
+<!-- AUTH -->
+<div id="auth">
+  <div id="auth-card">
+    <div id="auth-logo">🍿</div>
+
+    <!-- sign in -->
+    <div class="auth-view on" data-view="login">
+      <h2>Welcome back</h2>
+      <p class="sub">Sign in to watch together.</p>
+      <input type="email" id="li-email" placeholder="Email" autocomplete="username" autocapitalize="none">
+      <input type="password" id="li-pass" placeholder="Password" autocomplete="current-password">
+      <div class="auth-msg" id="li-msg"></div>
+      <button class="btn" id="btn-login">Sign in</button>
+      <button class="auth-link" data-go="forgot">Forgot password?</button>
+      <div id="auth-alt">New here? <button class="auth-link" data-go="signup">Create an account</button></div>
+    </div>
+
+    <!-- sign up -->
+    <div class="auth-view" data-view="signup">
+      <h2>Create your account</h2>
+      <p class="sub">Pick a username — friends can find you with it.</p>
+      <input type="text" id="su-user" placeholder="Username" maxlength="20" autocomplete="off" autocapitalize="none">
+      <input type="email" id="su-email" placeholder="Email" autocomplete="email" autocapitalize="none">
+      <input type="password" id="su-pass" placeholder="Password (min 6 characters)" autocomplete="new-password">
+      <input type="password" id="su-pass2" placeholder="Re-enter password" autocomplete="new-password">
+      <div class="auth-msg" id="su-msg"></div>
+      <button class="btn" id="btn-signup">Sign up</button>
+      <div id="auth-alt">Already have an account? <button class="auth-link" data-go="login">Sign in</button></div>
+    </div>
+
+    <!-- forgot -->
+    <div class="auth-view" data-view="forgot">
+      <h2>Reset password</h2>
+      <p class="sub">We'll email you a link to set a new one.</p>
+      <input type="email" id="fp-email" placeholder="Email" autocomplete="email" autocapitalize="none">
+      <div class="auth-msg" id="fp-msg"></div>
+      <button class="btn" id="btn-forgot">Send reset link</button>
+      <button class="auth-link" data-go="login">Back to sign in</button>
+    </div>
+
+    <!-- new password (after clicking the emailed link) -->
+    <div class="auth-view" data-view="reset">
+      <h2>Set a new password</h2>
+      <p class="sub">Almost done.</p>
+      <input type="password" id="np-pass" placeholder="New password (min 6 characters)" autocomplete="new-password">
+      <input type="password" id="np-pass2" placeholder="Re-enter new password" autocomplete="new-password">
+      <div class="auth-msg" id="np-msg"></div>
+      <button class="btn" id="btn-newpass">Save password</button>
+    </div>
+
+    <!-- loading -->
+    <div class="auth-view" data-view="loading">
+      <p class="sub">Checking your session…</p>
+    </div>
+  </div>
+</div>
+
 <!-- SETUP -->
 <div id="setup">
+  <div id="acct-row">
+    Signed in as <b id="acct-user">—</b> · ID <span id="acct-uid">------</span>
+    <button class="auth-link" id="btn-logout">Sign out</button>
+  </div>
   <!-- NAME + AVATAR -->
   <div id="profile-box">
     <div id="avatar-preview" title="Tap to change your character"><span id="avatar-emoji">🍿</span></div>
@@ -1030,6 +1121,7 @@
   function saveProfile() {
     if (!profile.name) profile.name = 'Guest';
     try { localStorage.setItem('wt_profile', JSON.stringify(profile)); } catch (e) {}
+    try { syncProfileToCloud(); } catch (e) {}
     const av = document.querySelector('#tile-local .cam-avatar');
     const lab = document.querySelector('#tile-local .cam-label');
     if (av)  { av.textContent = profile.emoji; av.style.background = profile.color; }
@@ -3139,6 +3231,168 @@
     peers.forEach(p => { if (p.conn) try { p.conn.close(); } catch (e) {} });
     if (peer) try { peer.destroy(); } catch (e) {}
   });
+
+  // ================= ACCOUNTS =================
+  const SUPA_URL = 'https://cpojjiehqcjbmfnyvhrq.supabase.co';
+  const SUPA_KEY = 'sb_publishable_7OVG2kX3CcGSSlXjGZe_ug_VX1QjrI9';
+
+  let supa = null, authUser = null, myUid6 = '';
+
+  function authView(name) {
+    document.querySelectorAll('.auth-view').forEach(v => v.classList.toggle('on', v.dataset.view === name));
+  }
+  function authMsg(id, text, ok) {
+    const el = $(id);
+    if (!el) return;
+    el.textContent = text || '';
+    el.className = 'auth-msg' + (text ? (ok ? ' ok' : ' err') : '');
+  }
+  function openApp() { document.body.classList.remove('auth-gate'); }
+  function gateApp() { document.body.classList.add('auth-gate'); }
+
+  document.querySelectorAll('[data-go]').forEach(b => {
+    b.onclick = () => { ['li-msg','su-msg','fp-msg','np-msg'].forEach(i => authMsg(i, '')); authView(b.dataset.go); };
+  });
+  // Enter submits the visible form
+  [['li-pass','btn-login'], ['li-email','btn-login'], ['su-pass2','btn-signup'],
+   ['fp-email','btn-forgot'], ['np-pass2','btn-newpass']].forEach(([inp, btn]) => {
+    const el = $(inp);
+    if (el) el.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $(btn).click(); } });
+  });
+
+  async function signedIn(user) {
+    authUser = user;
+    let row = null;
+    // the profile row is created by a DB trigger — it can lag a moment on a brand-new account
+    for (let i = 0; i < 8 && !row; i++) {
+      try {
+        const r = await supa.from('profiles').select('*').eq('id', user.id).maybeSingle();
+        row = r.data;
+      } catch (e) {}
+      if (!row) await new Promise(res => setTimeout(res, 400));
+    }
+    if (row) {
+      myUid6 = row.uid6 || '';
+      if (row.username) profile.name = row.username;
+      if (row.avatar_emoji) profile.emoji = row.avatar_emoji;
+      if (row.avatar_color) profile.color = row.avatar_color;
+      $('acct-user').textContent = '@' + (row.username || '');
+      $('acct-uid').textContent = myUid6 || '------';
+      $('acct-row').style.display = 'flex';
+      nameInput.value = profile.name;
+      nameInput.disabled = true;
+      nameInput.title = 'Your username — this is how friends find you';
+      try { localStorage.setItem('wt_profile', JSON.stringify(profile)); } catch (e) {}
+      refreshAvatarUI();
+    }
+    openApp();
+  }
+
+  // push avatar changes up to the account (fire and forget)
+  function syncProfileToCloud() {
+    if (!supa || !authUser) return;
+    supa.from('profiles')
+      .update({ avatar_emoji: profile.emoji, avatar_color: profile.color })
+      .eq('id', authUser.id)
+      .then(() => {}, () => {});
+  }
+
+  function friendlyAuthError(err) {
+    const m = (err && err.message ? err.message : String(err || '')).toLowerCase();
+    if (m.includes('duplicate') || m.includes('unique') || m.includes('username')) return 'That username is already taken.';
+    if (m.includes('already registered') || m.includes('already been registered')) return 'That email already has an account. Try signing in.';
+    if (m.includes('invalid login')) return 'Wrong email or password.';
+    if (m.includes('email not confirmed')) return 'Please confirm your email first — check your inbox.';
+    if (m.includes('rate') || m.includes('too many')) return 'Too many attempts. Wait a minute and try again.';
+    return err && err.message ? err.message : 'Something went wrong. Try again.';
+  }
+
+  function wireAuthButtons() {
+    $('btn-login').onclick = async () => {
+      const email = $('li-email').value.trim(), pass = $('li-pass').value;
+      if (!email || !pass) return authMsg('li-msg', 'Enter your email and password.');
+      authMsg('li-msg', 'Signing in…', true);
+      const { data, error } = await supa.auth.signInWithPassword({ email, password: pass });
+      if (error) return authMsg('li-msg', friendlyAuthError(error));
+      authMsg('li-msg', '');
+      await signedIn(data.user);
+    };
+
+    $('btn-signup').onclick = async () => {
+      const username = $('su-user').value.trim();
+      const email = $('su-email').value.trim();
+      const p1 = $('su-pass').value, p2 = $('su-pass2').value;
+      if (!/^[A-Za-z0-9_]{3,20}$/.test(username)) return authMsg('su-msg', 'Username: 3–20 letters, numbers or underscores.');
+      if (!email.includes('@')) return authMsg('su-msg', 'Enter a valid email.');
+      if (p1.length < 6) return authMsg('su-msg', 'Password must be at least 6 characters.');
+      if (p1 !== p2) return authMsg('su-msg', 'The two passwords do not match.');
+
+      authMsg('su-msg', 'Creating your account…', true);
+      // ask the DB whether the name is free (works before sign-in)
+      try {
+        const chk = await supa.rpc('username_available', { name: username });
+        if (chk && chk.data === false) return authMsg('su-msg', 'That username is already taken.');
+      } catch (e) {}
+
+      const { data, error } = await supa.auth.signUp({
+        email, password: p1,
+        options: { data: { username: username, avatar_emoji: profile.emoji, avatar_color: profile.color } }
+      });
+      if (error) return authMsg('su-msg', friendlyAuthError(error));
+      if (data.session) { authMsg('su-msg', ''); await signedIn(data.user); }
+      else authMsg('su-msg', 'Account created. Check ' + email + ' for a confirmation link, then sign in.', true);
+    };
+
+    $('btn-forgot').onclick = async () => {
+      const email = $('fp-email').value.trim();
+      if (!email.includes('@')) return authMsg('fp-msg', 'Enter your email.');
+      authMsg('fp-msg', 'Sending…', true);
+      const { error } = await supa.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
+      if (error) return authMsg('fp-msg', friendlyAuthError(error));
+      authMsg('fp-msg', 'Check ' + email + ' for the reset link.', true);
+    };
+
+    $('btn-newpass').onclick = async () => {
+      const p1 = $('np-pass').value, p2 = $('np-pass2').value;
+      if (p1.length < 6) return authMsg('np-msg', 'Password must be at least 6 characters.');
+      if (p1 !== p2) return authMsg('np-msg', 'The two passwords do not match.');
+      authMsg('np-msg', 'Saving…', true);
+      const { error } = await supa.auth.updateUser({ password: p1 });
+      if (error) return authMsg('np-msg', friendlyAuthError(error));
+      history.replaceState(null, '', location.pathname);
+      const { data } = await supa.auth.getUser();
+      authMsg('np-msg', '');
+      if (data && data.user) await signedIn(data.user); else authView('login');
+    };
+
+    $('btn-logout').onclick = async () => {
+      try { await supa.auth.signOut(); } catch (e) {}
+      location.reload();
+    };
+  }
+
+  async function startAuth() {
+    supa.auth.onAuthStateChange((event) => {
+      if (event === 'PASSWORD_RECOVERY') { gateApp(); authView('reset'); }
+      else if (event === 'SIGNED_OUT') { authUser = null; gateApp(); authView('login'); }
+    });
+    if ((location.hash || '').includes('type=recovery')) { authView('reset'); return; }
+    let session = null;
+    try { const { data } = await supa.auth.getSession(); session = data && data.session; } catch (e) {}
+    if (session) await signedIn(session.user);
+    else authView('login');
+  }
+
+  if (!SUPA_URL || !SUPA_KEY || !window.supabase) {
+    openApp();                       // no backend configured — works exactly as before, with room codes
+  } else {
+    supa = window.supabase.createClient(SUPA_URL, SUPA_KEY, {
+      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+    });
+    wireAuthButtons();
+    authView('loading');
+    startAuth();
+  }
 })();
 </script>
 </body>
