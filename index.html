@@ -156,6 +156,11 @@
   }
   .cv-act:hover { border-color: var(--accent); color: var(--accent); }
   #cv-remove:hover { border-color: #ff6b6b; color: #ff6b6b; }
+  #nf-state {
+    font-size: 11px; color: #6bcb77; border: 1px solid #24402c; background: #121f16;
+    padding: 5px 9px; border-radius: 999px; white-space: nowrap; flex: none;
+  }
+  @media (max-width: 560px) { #nf-state { display: none !important; } }
   #cv-msgs { flex: 1; overflow-y: auto; padding: 14px 12px; display: flex; flex-direction: column; gap: 6px; }
   .cv-msg {
     max-width: 78%; padding: 8px 12px; border-radius: 14px; font-size: 14px;
@@ -1163,6 +1168,7 @@
     <button class="cv-act" id="cv-watch" title="Watch together">
       <svg class="ic" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/><polygon points="10 8 15 10.5 10 13" fill="currentColor" stroke="none"/></svg>
     </button>
+    <span id="nf-state" style="display:none" title="Open Netflix in another tab — playback will stay in step">Netflix sync ready</span>
     <button class="cv-act" id="cv-remove" title="Remove friend">
       <svg class="ic" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
     </button>
@@ -4586,6 +4592,7 @@
     }
     cvRoomId = data[0].out_room_id;
     cvCode = data[0].out_code;
+    nfOpen(cvRoomId);          // ready for Netflix sync if the extension is installed
 
     const hist = await supa.rpc('room_history', { r: cvRoomId });
     $('cv-msgs').innerHTML = '';
@@ -4615,6 +4622,39 @@
         })
       .subscribe();
   }
+
+  // ---------- NETFLIX SYNC (via the browser extension) ----------
+  // The extension controls Netflix's player. This tab does the networking,
+  // because it already holds your session and knows which room you are in.
+  let nfChannel = null, nfExt = false;
+
+  function nfOpen(roomId) {
+    nfClose();
+    if (!supa || !roomId) return;
+    nfChannel = supa.channel('nf-' + roomId, { config: { broadcast: { self: false } } })
+      .on('broadcast', { event: 'nf' }, (p) => {
+        window.postMessage({ source: 'wt-page', ev: p.payload }, '*');
+      })
+      .subscribe();
+  }
+
+  function nfClose() {
+    if (nfChannel) { try { supa.removeChannel(nfChannel); } catch (e) {} nfChannel = null; }
+  }
+
+  window.addEventListener('message', (e) => {
+    if (e.source !== window) return;
+    const d = e.data;
+    if (!d) return;
+    if (d.source === 'wt-ext-hello') {
+      nfExt = true;
+      const el = $('nf-state');
+      if (el) el.style.display = '';
+      return;
+    }
+    if (d.source !== 'wt-ext' || !nfChannel) return;
+    nfChannel.send({ type: 'broadcast', event: 'nf', payload: d.ev });
+  });
 
   function closeFriendChat() {
     if (recorder) recStop(false);            // never leave the mic running
