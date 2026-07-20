@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "Watch Together — Netflix sync",
+  "version": "1.0.0",
+  "description": "Keeps your Netflix playback in step with a friend, using your Watch Together room. No video is shared — only play, pause and seek.",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "https://www.netflix.com/*",
+    "https://watch-together-rust.vercel.app/*"
+  ],
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    {
+      "matches": ["https://www.netflix.com/watch/*"],
+      "js": ["netflix.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://watch-together-rust.vercel.app/*"],
+      "js": ["bridge.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["netflix-page.js"],
+      "matches": ["https://www.netflix.com/*"]
+    }
+  ]
+}
