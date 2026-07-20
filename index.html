@@ -156,11 +156,21 @@
   }
   .cv-act:hover { border-color: var(--accent); color: var(--accent); }
   #cv-remove:hover { border-color: #ff6b6b; color: #ff6b6b; }
-  #nf-state {
-    font-size: 11px; color: #6bcb77; border: 1px solid #24402c; background: #121f16;
-    padding: 5px 9px; border-radius: 999px; white-space: nowrap; flex: none;
+  #cv-netflix.live { border-color: #2f7d43; color: #6bcb77; background: #121f16; }
+  #nf-panel {
+    display: none; position: absolute; right: 12px; top: 62px; z-index: 7; width: 320px;
+    max-width: calc(100vw - 24px); background: #14171d; border: 1px solid #2a3040;
+    border-radius: 14px; padding: 14px; box-shadow: 0 14px 36px rgba(0,0,0,.6);
   }
-  @media (max-width: 560px) { #nf-state { display: none !important; } }
+  #nf-panel.on { display: block; }
+  #nf-badge { font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+  #nf-badge.live { color: #6bcb77; }
+  #nf-badge.off  { color: #ffb454; }
+  #nf-how { font-size: 12.5px; color: var(--muted); line-height: 1.55; }
+  #nf-how ol { margin: 6px 0 0; padding-left: 18px; }
+  #nf-how li { margin: 3px 0; }
+  #nf-how a { color: var(--accent); }
+  #nf-how b { color: var(--fg); }
   #cv-msgs { flex: 1; overflow-y: auto; padding: 14px 12px; display: flex; flex-direction: column; gap: 6px; }
   .cv-msg {
     max-width: 78%; padding: 8px 12px; border-radius: 14px; font-size: 14px;
@@ -1168,12 +1178,19 @@
     <button class="cv-act" id="cv-watch" title="Watch together">
       <svg class="ic" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/><polygon points="10 8 15 10.5 10 13" fill="currentColor" stroke="none"/></svg>
     </button>
-    <span id="nf-state" style="display:none" title="Open Netflix in another tab — playback will stay in step">Netflix sync ready</span>
+    <button class="cv-act" id="cv-netflix" title="Watch Netflix together">
+      <svg class="ic" viewBox="0 0 24 24"><path d="M6 3v18l6-9 6 9V3l-6 9z"/></svg>
+    </button>
     <button class="cv-act" id="cv-remove" title="Remove friend">
       <svg class="ic" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
     </button>
   </div>
   <div id="cv-msgs"></div>
+
+  <div id="nf-panel">
+    <div id="nf-badge">Checking…</div>
+    <div id="nf-how"></div>
+  </div>
 
   <div id="cv-attach-menu">
     <button class="cv-att" data-att="photo">
@@ -4642,16 +4659,38 @@
     if (nfChannel) { try { supa.removeChannel(nfChannel); } catch (e) {} nfChannel = null; }
   }
 
+  const NF_REPO = 'https://github.com/santosh2341/watch-together/tree/main/extension';
+
+  function nfPaint() {
+    const btn = $('cv-netflix'), badge = $('nf-badge'), how = $('nf-how');
+    if (!btn) return;
+    btn.classList.toggle('live', nfExt);
+    if (nfExt) {
+      badge.textContent = 'Netflix sync is on';
+      badge.className = 'live';
+      how.innerHTML = 'Open <b>netflix.com</b> in another tab and you both play the same title. ' +
+        'Play, pause and skipping stay in step. Keep this tab open — it carries the messages.' +
+        '<ol><li>Both of you need your own Netflix account.</li>' +
+        '<li>Start a call here first if you want to talk.</li></ol>';
+    } else {
+      badge.textContent = 'Needs a one-off setup';
+      badge.className = 'off';
+      how.innerHTML = 'Netflix blocks other sites from touching its player, so this needs a small ' +
+        'browser extension. <b>You and your friend both install it once.</b>' +
+        '<ol><li><a href="' + NF_REPO + '" target="_blank" rel="noopener">Download the extension folder</a></li>' +
+        '<li>Go to <b>chrome://extensions</b></li>' +
+        '<li>Turn on <b>Developer mode</b>, top right</li>' +
+        '<li>Click <b>Load unpacked</b> and pick that folder</li>' +
+        '<li>Reload this page</li></ol>' +
+        'Chrome and Edge on a computer only — extensions do not run on phones.';
+    }
+  }
+
   window.addEventListener('message', (e) => {
     if (e.source !== window) return;
     const d = e.data;
     if (!d) return;
-    if (d.source === 'wt-ext-hello') {
-      nfExt = true;
-      const el = $('nf-state');
-      if (el) el.style.display = '';
-      return;
-    }
+    if (d.source === 'wt-ext-hello') { nfExt = true; nfPaint(); return; }
     if (d.source !== 'wt-ext' || !nfChannel) return;
     nfChannel.send({ type: 'broadcast', event: 'nf', payload: d.ev });
   });
@@ -4660,6 +4699,7 @@
     if (recorder) recStop(false);            // never leave the mic running
     $('cv-attach-menu').classList.remove('on');
     document.body.classList.remove('chatting');
+    $('nf-panel').classList.remove('on');
     if (cvChannel) { try { supa.removeChannel(cvChannel); } catch (e) {} cvChannel = null; }
   }
 
@@ -4745,6 +4785,17 @@
 
   function wireChat() {
     $('cv-back').onclick = closeFriendChat;
+
+    $('cv-netflix').onclick = (e) => {
+      e.stopPropagation();
+      nfPaint();
+      $('nf-panel').classList.toggle('on');
+    };
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('#nf-panel') && !e.target.closest('#cv-netflix')) {
+        $('nf-panel').classList.remove('on');
+      }
+    });
 
     // attachments
     $('cv-plus').onclick = () => $('cv-attach-menu').classList.toggle('on');
