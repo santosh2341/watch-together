@@ -119,6 +119,41 @@
     padding: 8px 4px; border-bottom: 1px solid #2a3040; margin-bottom: 6px;
   }
 
+  /* ---- Streaming services ---- */
+  #conn-modal {
+    display: none; position: fixed; inset: 0; z-index: 130;
+    background: rgba(0,0,0,.6); align-items: center; justify-content: center; padding: 18px;
+  }
+  #conn-modal.on { display: flex; }
+  #conn-card {
+    width: 100%; max-width: 430px; max-height: 86vh; overflow-y: auto;
+    background: var(--card); border: 1px solid #2a3040; border-radius: 16px; padding: 20px;
+  }
+  #conn-card h3 { margin: 0 0 6px; font-size: 17px; }
+  .conn-intro { font-size: 12.5px; color: var(--muted); line-height: 1.55; margin: 0 0 14px; }
+  .conn-row {
+    display: flex; align-items: center; gap: 11px; padding: 11px 0;
+    border-top: 1px solid #23272f;
+  }
+  .conn-logo {
+    width: 40px; height: 40px; border-radius: 10px; flex: none;
+    display: grid; place-items: center; font-weight: 800; font-size: 15px; color: #fff;
+  }
+  .conn-meta { flex: 1; min-width: 0; text-align: left; }
+  .conn-name { font-size: 14px; font-weight: 600; }
+  .conn-stat { font-size: 11.5px; margin-top: 2px; }
+  .conn-stat.on   { color: #6bcb77; }
+  .conn-stat.off  { color: #ffb454; }
+  .conn-stat.soon { color: var(--muted); }
+  .conn-go {
+    border: 1px solid #2a3040; background: #1b1f27; color: var(--fg);
+    border-radius: 9px; padding: 7px 13px; font-size: 12.5px; font-weight: 600;
+    cursor: pointer; font-family: inherit; flex: none;
+  }
+  .conn-go:hover { border-color: var(--accent); color: var(--accent); }
+  .conn-go[disabled] { opacity: .45; cursor: default; }
+  #conn-card .btn { margin-top: 16px; max-width: none; width: 100%; }
+
   /* an avatar showing a real photo instead of a character */
   .has-photo {
     background-size: cover !important;
@@ -1325,8 +1360,24 @@
 
   <div id="friends-cta">
     <p id="cta-text">Add a friend with the search bar above, then press <b>Watch</b> next to their name.</p>
+    <button class="btn secondary" id="btn-connectors" style="max-width:260px">
+      <svg class="ic" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg>
+      Streaming services
+    </button>
     <button class="auth-link" id="show-classic">Use a room code instead</button>
   </div>
+
+<div id="conn-modal">
+  <div id="conn-card">
+    <h3>Streaming services</h3>
+    <p class="conn-intro">
+      You stay signed in to these in your browser as normal. Watch Together never sees
+      or stores your streaming passwords — it only keeps the players in step.
+    </p>
+    <div id="conn-list"></div>
+    <button class="btn secondary" id="conn-close">Close</button>
+  </div>
+</div>
 
   <div id="classic-room">
     <div id="cap-row">
@@ -4661,6 +4712,51 @@
 
   const NF_REPO = 'https://github.com/santosh2341/watch-together/tree/main/extension';
 
+  // ---------- STREAMING SERVICES ----------
+  const SERVICES = [
+    { name: 'Netflix',     short: 'N', colour: '#e50914', url: 'https://www.netflix.com/', ready: true },
+    { name: 'Prime Video', short: 'P', colour: '#1a98ff', url: 'https://www.primevideo.com/', ready: false },
+    { name: 'Hotstar',     short: 'H', colour: '#1f80e0', url: 'https://www.hotstar.com/', ready: false },
+    { name: 'YouTube',     short: 'Y', colour: '#ff0033', url: '', ready: true, builtIn: true }
+  ];
+
+  function renderConnectors() {
+    $('conn-list').innerHTML = SERVICES.map(s => {
+      let stat, cls, btn;
+      if (s.builtIn) {
+        stat = 'Built in — paste a link on the watch screen';
+        cls = 'on';
+        btn = '<button class="conn-go" disabled>Ready</button>';
+      } else if (!s.ready) {
+        stat = 'Not supported yet';
+        cls = 'soon';
+        btn = '<button class="conn-go" disabled>Soon</button>';
+      } else if (nfExt) {
+        stat = 'Sync is on — open it and press play';
+        cls = 'on';
+        btn = '<button class="conn-go" data-open="' + frEsc(s.url) + '">Open</button>';
+      } else {
+        stat = 'Needs the browser extension';
+        cls = 'off';
+        btn = '<button class="conn-go" data-open="' + frEsc(NF_REPO) + '">Set up</button>';
+      }
+      return '<div class="conn-row">' +
+        '<div class="conn-logo" style="background:' + s.colour + '">' + s.short + '</div>' +
+        '<div class="conn-meta"><div class="conn-name">' + frEsc(s.name) + '</div>' +
+        '<div class="conn-stat ' + cls + '">' + stat + '</div></div>' + btn + '</div>';
+    }).join('');
+  }
+
+  function wireConnectors() {
+    $('btn-connectors').onclick = () => { renderConnectors(); $('conn-modal').classList.add('on'); };
+    $('conn-close').onclick = () => $('conn-modal').classList.remove('on');
+    $('conn-modal').onclick = (e) => { if (e.target === $('conn-modal')) $('conn-modal').classList.remove('on'); };
+    $('conn-list').onclick = (e) => {
+      const b = e.target.closest('[data-open]');
+      if (b) window.open(b.dataset.open, '_blank', 'noopener');
+    };
+  }
+
   function nfPaint() {
     const btn = $('cv-netflix'), badge = $('nf-badge'), how = $('nf-how');
     if (!btn) return;
@@ -5142,6 +5238,7 @@
     wireChat();
     wireRing();
     wireCallScreen();
+    wireConnectors();
     applyMode();
     authView('loading');
     startAuth();
